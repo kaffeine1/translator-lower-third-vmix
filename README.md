@@ -484,6 +484,4 @@ shows the version and the config/log paths.
 
 ## License
 
-License not decided yet.
-
-Before public release, add an explicit license file.
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Michele Dipace.
