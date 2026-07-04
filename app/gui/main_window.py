@@ -260,15 +260,15 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(
             self._config,
             self._services.list_audio_devices(),
-            has_saved_api_key=self._has_saved_api_key(),
+            saved_accounts=self._saved_accounts(),
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self._apply_settings(dialog.result_config(), dialog.entered_api_key())
+        self._apply_settings(dialog.result_config(), dialog.entered_credentials())
 
-    def _apply_settings(self, new_config: AppConfig, api_key: str) -> bool:
-        """Persists config and API key, showing errors to the operator."""
+    def _apply_settings(self, new_config: AppConfig, credentials: dict[str, str]) -> bool:
+        """Persists config and any entered credentials, showing errors clearly."""
         try:
             self._manager.save(new_config)
         except OSError:
@@ -284,9 +284,9 @@ class MainWindow(QMainWindow):
         # config changed: previous test results are no longer valid
         for light in (self.audio_light, self.api_light, self.vmix_light):
             light.set_state(StatusState.YELLOW)
-        if api_key:
+        for account, value in credentials.items():
             try:
-                self._secret_store.set_api_key(new_config.provider, api_key)
+                self._secret_store.set_api_key(account, value)
             except SecretStorageError as exc:
                 QMessageBox.warning(self, t("gui.settings_title"), str(exc))
                 return False
@@ -397,7 +397,21 @@ class MainWindow(QMainWindow):
         on_done(result)
 
     def _has_saved_api_key(self) -> bool:
+        """True if every credential the current provider needs is stored."""
+        from app.providers.registry import get_provider_info
+
+        info = get_provider_info(self._config.provider)
+        names = info.required_key_names if info else ()
+        return bool(names) and all(self._has_account(name) for name in names)
+
+    def _has_account(self, account: str) -> bool:
         try:
-            return self._secret_store.get_api_key(self._config.provider) is not None
+            return bool(self._secret_store.get_api_key(account))
         except SecretStorageError:
             return False
+
+    def _saved_accounts(self) -> set[str]:
+        """Secure-storage accounts that currently hold a value (for placeholders)."""
+        from app.providers.registry import all_credential_accounts
+
+        return {acc for acc in all_credential_accounts() if self._has_account(acc)}

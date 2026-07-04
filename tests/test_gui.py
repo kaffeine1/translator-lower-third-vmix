@@ -175,7 +175,7 @@ def test_settings_change_resets_status_lights(qapp, tmp_path):
     for light in (window.audio_light, window.api_light, window.vmix_light):
         light.set_state(StatusState.GREEN)
 
-    assert window._apply_settings(AppConfig(), "") is True
+    assert window._apply_settings(AppConfig(), {}) is True
     for light in (window.audio_light, window.api_light, window.vmix_light):
         assert light.state == StatusState.YELLOW
 
@@ -337,19 +337,52 @@ def test_settings_dialog_has_ui_language_selector(qapp):
     assert dialog.result_config().ui_language == "it"
 
 
-def test_settings_dialog_never_prefills_api_key(qapp):
+def test_settings_dialog_credentials_empty_by_default(qapp):
     dialog = SettingsDialog(
-        AppConfig(), MockAppServices().list_audio_devices(), has_saved_api_key=True
+        AppConfig(), MockAppServices().list_audio_devices(), saved_accounts={"openai"}
     )
-    assert dialog.api_key_edit.text() == ""
-    assert dialog.entered_api_key() == ""
+    # openai provider -> one credential field, empty, never prefilled
+    assert "openai" in dialog._cred_edits
+    assert dialog._cred_edits["openai"].text() == ""
+    assert dialog.entered_credentials() == {}
 
 
-def test_settings_dialog_api_key_field_is_password(qapp):
+def test_settings_dialog_secret_field_is_password(qapp):
     from PySide6.QtWidgets import QLineEdit
 
     dialog = SettingsDialog(AppConfig(), [])
-    assert dialog.api_key_edit.echoMode() == QLineEdit.EchoMode.Password
+    assert dialog._cred_edits["openai"].echoMode() == QLineEdit.EchoMode.Password
+
+
+def test_settings_dialog_dynamic_credentials_per_provider(qapp):
+    from PySide6.QtWidgets import QLineEdit
+
+    config = AppConfig()
+    config.provider = "azure-deepl"
+    dialog = SettingsDialog(config, [])
+    # composed cloud pipeline -> one field per credential
+    assert set(dialog._cred_edits) == {"azure", "azure-region", "deepl"}
+    assert dialog._cred_edits["azure"].echoMode() == QLineEdit.EchoMode.Password
+    # region is not a secret -> normal (visible) field
+    assert dialog._cred_edits["azure-region"].echoMode() == QLineEdit.EchoMode.Normal
+    dialog._cred_edits["deepl"].setText("dk:fx")
+    assert dialog.entered_credentials() == {"deepl": "dk:fx"}
+
+
+def test_settings_dialog_demo_provider_has_no_credentials(qapp):
+    config = AppConfig()
+    config.provider = "fake"
+    dialog = SettingsDialog(config, [])
+    assert dialog._cred_edits == {}
+    assert dialog.entered_credentials() == {}
+
+
+def test_settings_dialog_switching_provider_rebuilds_credentials(qapp):
+    dialog = SettingsDialog(AppConfig(), [])  # openai
+    assert set(dialog._cred_edits) == {"openai"}
+    idx = dialog.provider_combo.findData("google-deepl")
+    dialog.provider_combo.setCurrentIndex(idx)
+    assert set(dialog._cred_edits) == {"google", "deepl"}
 
 
 def test_settings_dialog_preserves_values_not_in_combo_lists(qapp):
@@ -385,7 +418,7 @@ def test_apply_settings_save_failure_is_visible_and_keeps_old_config(
 
     new_config = AppConfig()
     new_config.vmix.input = "NuovoTitolo"
-    assert window._apply_settings(new_config, "sk-test-key-123456789") is False
+    assert window._apply_settings(new_config, {"openai": "sk-test-key-123456789"}) is False
     assert shown.get("critical") is True
     assert window._config is old_config  # no memory/disk divergence
 

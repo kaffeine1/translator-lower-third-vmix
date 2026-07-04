@@ -25,6 +25,83 @@ def test_registry_lists_openai_and_demo():
     assert "fake" in ids
 
 
+def test_registry_lists_composed_cloud_pipelines():
+    ids = [info.id for info in available_providers()]
+    assert "google-deepl" in ids
+    assert "azure-deepl" in ids
+
+
+def test_composed_provider_required_keys():
+    assert get_provider_info("google-deepl").required_key_names == ("google", "deepl")
+    assert get_provider_info("azure-deepl").required_key_names == (
+        "azure", "azure-region", "deepl",
+    )
+
+
+def test_composed_provider_credential_fields():
+    creds = get_provider_info("azure-deepl").credentials
+    accounts = [c.account for c in creds]
+    assert accounts == ["azure", "azure-region", "deepl"]
+    # region and google path are plain (non-secret) fields
+    region = next(c for c in creds if c.account == "azure-region")
+    assert region.secret is False
+
+
+def test_create_composed_cloud_provider():
+    from app.providers.composed import ComposedRealtimeProvider
+
+    store = InMemorySecretStore()
+    store.set_api_key("google", "/creds.json")
+    store.set_api_key("deepl", "k:fx")
+    provider = create_provider("google-deepl", store)
+    assert isinstance(provider, ComposedRealtimeProvider)
+
+
+def test_all_credential_accounts():
+    from app.providers.registry import all_credential_accounts
+
+    accounts = all_credential_accounts()
+    assert {"openai", "google", "azure", "azure-region", "deepl"} <= accounts
+
+
+def test_make_provider_composed_falls_back_to_demo_without_keys():
+    services = _services("google-deepl", with_key=False)
+    assert isinstance(services._make_provider(), FakeTranslationProvider)
+
+
+def test_make_provider_composed_with_all_keys():
+    from app.providers.composed import ComposedRealtimeProvider
+
+    store = InMemorySecretStore()
+    store.set_api_key("google", "/creds.json")
+    store.set_api_key("deepl", "k:fx")
+    services = LiveAppServices(FakeAudioInput(), store)
+    config = AppConfig()
+    config.provider = "google-deepl"
+    services.update_config(config)
+    assert isinstance(services._make_provider(), ComposedRealtimeProvider)
+
+
+def test_test_api_composed_missing_keys_is_error():
+    services = _services("azure-deepl", with_key=False)
+    result = services.test_api()
+    assert result.ok is False
+
+
+def test_test_api_composed_present_keys_ok_without_live_check():
+    store = InMemorySecretStore()
+    store.set_api_key("azure", "k")
+    store.set_api_key("azure-region", "westeurope")
+    store.set_api_key("deepl", "d:fx")
+    services = LiveAppServices(FakeAudioInput(), store)
+    config = AppConfig()
+    config.provider = "azure-deepl"
+    services.update_config(config)
+    result = services.test_api()
+    assert result.ok is True
+    assert "credenziali" in result.message.lower()
+
+
 def test_provider_info_flags():
     assert get_provider_info("openai").requires_api_key is True
     assert get_provider_info("fake").requires_api_key is False

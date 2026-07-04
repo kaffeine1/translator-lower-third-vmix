@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QGroupBox,
+    QLabel,
     QLineEdit,
     QSpinBox,
     QVBoxLayout,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 from app.audio.devices import AudioDevice
 from app.config.models import AppConfig
 from app.i18n import available_locales, t
-from app.providers.registry import available_providers
+from app.providers.registry import available_providers, get_provider_info
 
 LANGUAGES = [
     ("Spagnolo", "es"),
@@ -58,14 +59,18 @@ class SettingsDialog(QDialog):
         self,
         config: AppConfig,
         devices: list[AudioDevice],
-        has_saved_api_key: bool = False,
+        saved_accounts: set[str] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("settings.window_title"))
         self.setMinimumWidth(420)
+        # secure-storage accounts that already have a stored value (drives the
+        # "already saved" placeholder on each credential field)
+        self._saved_accounts = set(saved_accounts or ())
+        self._cred_edits: dict[str, QLineEdit] = {}
         self._build_ui(devices)
-        self._load(config, has_saved_api_key)
+        self._load(config)
 
     # ------------------------------------------------------------------ UI
 
@@ -85,18 +90,21 @@ class SettingsDialog(QDialog):
         self.provider_combo = QComboBox()
         for label, code in PROVIDERS:
             self.provider_combo.addItem(label, code)
-        self.api_key_edit = QLineEdit()
-        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.source_combo = QComboBox()
         self.target_combo = QComboBox()
         for label, code in LANGUAGES:
             self.source_combo.addItem(label, code)
             self.target_combo.addItem(label, code)
         provider_form.addRow(t("settings.label.provider"), self.provider_combo)
-        provider_form.addRow(t("settings.label.api_key"), self.api_key_edit)
         provider_form.addRow(t("settings.label.source_language"), self.source_combo)
         provider_form.addRow(t("settings.label.target_language"), self.target_combo)
         layout.addWidget(provider_box)
+
+        # credentials: fields depend on the selected provider, rebuilt on change
+        credentials_box = QGroupBox(t("settings.group.credentials"))
+        self._cred_form = QFormLayout(credentials_box)
+        layout.addWidget(credentials_box)
+        self.provider_combo.currentIndexChanged.connect(self._rebuild_credentials)
 
         audio_box = QGroupBox(t("settings.group.audio"))
         audio_form = QFormLayout(audio_box)
@@ -155,15 +163,32 @@ class SettingsDialog(QDialog):
 
     # ------------------------------------------------------------------ data
 
-    def _load(self, config: AppConfig, has_saved_api_key: bool) -> None:
+    def _rebuild_credentials(self) -> None:
+        """Show one field per credential required by the selected provider."""
+        while self._cred_form.rowCount():
+            self._cred_form.removeRow(0)
+        self._cred_edits.clear()
+        info = get_provider_info(self.provider_combo.currentData())
+        credentials = info.credentials if info else ()
+        if not credentials:
+            self._cred_form.addRow(QLabel(t("settings.credentials_none")))
+            return
+        for cred in credentials:
+            edit = QLineEdit()
+            if cred.secret:
+                edit.setEchoMode(QLineEdit.EchoMode.Password)
+            edit.setPlaceholderText(
+                t("cred.placeholder_saved")
+                if cred.account in self._saved_accounts
+                else t("cred.placeholder_new")
+            )
+            self._cred_form.addRow(t(cred.label_key), edit)
+            self._cred_edits[cred.account] = edit
+
+    def _load(self, config: AppConfig) -> None:
         _select_by_data(self.lang_combo, config.ui_language)
         _select_by_data(self.provider_combo, config.provider)
-        # the saved key is never shown: empty field = do not change
-        self.api_key_edit.setPlaceholderText(
-            t("settings.api_key.placeholder_saved")
-            if has_saved_api_key
-            else t("settings.api_key.placeholder_new")
-        )
+        self._rebuild_credentials()  # match the selected provider
         _select_by_data(self.source_combo, config.source_language)
         _select_by_data(self.target_combo, config.target_language)
         _select_by_data(self.device_combo, config.audio.device_id)
@@ -196,6 +221,12 @@ class SettingsDialog(QDialog):
         config.subtitles.clear_after_silence_seconds = self.clear_spin.value()
         return config
 
-    def entered_api_key(self) -> str:
-        """Key typed by the user; empty string = do not change the saved one."""
-        return self.api_key_edit.text().strip()
+    def entered_credentials(self) -> dict[str, str]:
+        """account -> value for credential fields the user filled.
+
+        Empty fields are omitted (leave the stored value unchanged)."""
+        return {
+            account: edit.text().strip()
+            for account, edit in self._cred_edits.items()
+            if edit.text().strip()
+        }

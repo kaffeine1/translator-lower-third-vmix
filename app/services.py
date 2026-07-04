@@ -208,32 +208,29 @@ class LiveAppServices(MockAppServices):
 
         provider_id = self._config.provider
         info = get_provider_info(provider_id)
-        if info is not None and not info.requires_api_key:
+        if info is None or not info.requires_api_key:
             return ServiceResult(True, t("service.demo_mode_no_key"))
         if self._secret_store is None:
             return ServiceResult(False, t("service.config_unavailable"))
-        try:
-            key = self._secret_store.get_api_key(provider_id)
-        except SecretStorageError as exc:
-            return ServiceResult(False, str(exc))
-        if not key:
-            return ServiceResult(
-                False, t("service.no_api_key_saved")
-            )
-        import asyncio
+        # every credential the provider needs must be present
+        missing = [name for name in info.required_key_names if not self._has_key(name)]
+        if missing:
+            return ServiceResult(False, t("service.no_api_key_saved"))
+        if provider_id == "openai":
+            import asyncio
 
-        from app.providers.openai_realtime import OpenAIProviderError, check_api_key
+            from app.providers.openai_realtime import OpenAIProviderError, check_api_key
 
-        try:
-            asyncio.run(check_api_key(self._secret_store, provider_id))
-        except OpenAIProviderError as exc:
-            return ServiceResult(False, str(exc))
-        except Exception:
-            logger.exception("Verifica API fallita")
-            return ServiceResult(
-                False, t("service.api_verify_failed")
-            )
-        return ServiceResult(True, t("service.api_connection_ok"))
+            try:
+                asyncio.run(check_api_key(self._secret_store, "openai"))
+            except OpenAIProviderError as exc:
+                return ServiceResult(False, str(exc))
+            except Exception:
+                logger.exception("Verifica API fallita")
+                return ServiceResult(False, t("service.api_verify_failed"))
+            return ServiceResult(True, t("service.api_connection_ok"))
+        # composed cloud providers: no live check available (would need the SDKs)
+        return ServiceResult(True, t("service.credentials_present"))
 
     def start_translation(self) -> ServiceResult:
         if self._config is None:

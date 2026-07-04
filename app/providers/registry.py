@@ -22,22 +22,52 @@ from app.providers.base import (
 
 
 @dataclass(frozen=True)
+class CredentialField:
+    """A credential a provider needs, stored in secure storage under ``account``.
+
+    ``label_key`` is an i18n key for the field label; ``secret`` marks a
+    password field (hidden) vs a plain value like a file path or a region.
+    """
+
+    account: str
+    label_key: str
+    secret: bool = True
+
+
+# Reusable credential descriptors (one per secure-storage account).
+_CRED_OPENAI = CredentialField("openai", "cred.openai_key")
+_CRED_DEEPL = CredentialField("deepl", "cred.deepl_key")
+_CRED_GOOGLE = CredentialField("google", "cred.google_credentials", secret=False)
+_CRED_AZURE = CredentialField("azure", "cred.azure_key")
+_CRED_AZURE_REGION = CredentialField("azure-region", "cred.azure_region", secret=False)
+
+
+@dataclass(frozen=True)
 class ProviderInfo:
     id: str
     display_name: str
-    # names of the secure-storage accounts whose key is required; empty = none
-    required_key_names: tuple[str, ...] = ()
+    credentials: tuple[CredentialField, ...] = ()
+
+    @property
+    def required_key_names(self) -> tuple[str, ...]:
+        return tuple(c.account for c in self.credentials)
 
     @property
     def requires_api_key(self) -> bool:
-        return bool(self.required_key_names)
+        return bool(self.credentials)
 
 
 # Order = order in the GUI selector (complete realtime providers).
 _REGISTRY: dict[str, ProviderInfo] = {
-    "openai": ProviderInfo("openai", "OpenAI Realtime", ("openai",)),
+    "openai": ProviderInfo("openai", "OpenAI Realtime", (_CRED_OPENAI,)),
     "fake": ProviderInfo("fake", "Demo (senza API)"),
     "demo-composed": ProviderInfo("demo-composed", "Demo (speech + traduzione separati)"),
+    "google-deepl": ProviderInfo(
+        "google-deepl", "Google Speech → DeepL", (_CRED_GOOGLE, _CRED_DEEPL)
+    ),
+    "azure-deepl": ProviderInfo(
+        "azure-deepl", "Azure Speech → DeepL", (_CRED_AZURE, _CRED_AZURE_REGION, _CRED_DEEPL)
+    ),
 }
 
 DEFAULT_PROVIDER_ID = "openai"
@@ -45,6 +75,14 @@ DEFAULT_PROVIDER_ID = "openai"
 
 def available_providers() -> list[ProviderInfo]:
     return list(_REGISTRY.values())
+
+
+def all_credential_accounts() -> set[str]:
+    """Union of every secure-storage account used by any realtime provider."""
+    accounts: set[str] = set()
+    for info in _REGISTRY.values():
+        accounts.update(info.required_key_names)
+    return accounts
 
 
 def get_provider_info(provider_id: str) -> ProviderInfo | None:
@@ -68,6 +106,10 @@ def create_provider(
         from app.providers.openai_realtime import OpenAIRealtimeTranslationProvider
 
         return OpenAIRealtimeTranslationProvider(secret_store, "openai")
+    if provider_id == "google-deepl":
+        return create_composed_provider("google", "deepl", secret_store)
+    if provider_id == "azure-deepl":
+        return create_composed_provider("azure", "deepl", secret_store)
     raise ValueError(f"Provider sconosciuto: {provider_id}")
 
 
@@ -78,8 +120,8 @@ def create_provider(
 
 _SPEECH_REGISTRY: dict[str, ProviderInfo] = {
     "fake-speech": ProviderInfo("fake-speech", "Demo (voce)"),
-    "google": ProviderInfo("google", "Google Speech-to-Text", ("google",)),
-    "azure": ProviderInfo("azure", "Azure Speech", ("azure",)),
+    "google": ProviderInfo("google", "Google Speech-to-Text", (_CRED_GOOGLE,)),
+    "azure": ProviderInfo("azure", "Azure Speech", (_CRED_AZURE, _CRED_AZURE_REGION)),
 }
 
 
@@ -132,7 +174,7 @@ def create_composed_provider(
 
 _TRANSLATION_REGISTRY: dict[str, ProviderInfo] = {
     "fake-text": ProviderInfo("fake-text", "Demo (traduzione testo)"),
-    "deepl": ProviderInfo("deepl", "DeepL", ("deepl",)),
+    "deepl": ProviderInfo("deepl", "DeepL", (_CRED_DEEPL,)),
 }
 
 

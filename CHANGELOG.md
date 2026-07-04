@@ -9,6 +9,11 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Pipeline cloud selezionabili dalla GUI**: le voci "Google Speech → DeepL" e
+  "Azure Speech → DeepL" compaiono nel selettore Provider. Le Impostazioni ora
+  mostrano **campi credenziali dinamici** in base al provider scelto (es. Azure
+  → chiave + regione + chiave DeepL); ogni valore è salvato nel secure storage
+  sotto il proprio account, i campi vuoti non sovrascrivono quelli già salvati.
 - **Localizzazione (i18n)**: modulo `app/i18n.py` con `t("chiave", …)` e catalogo
   per lingua. Tutti i messaggi visibili all'operatore (GUI, servizi, provider,
   vMix, audio) passano dal catalogo. Per ora è presente solo l'italiano, ma la

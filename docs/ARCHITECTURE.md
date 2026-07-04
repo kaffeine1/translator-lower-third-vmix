@@ -198,10 +198,16 @@ SDK or network is needed. Their SDK callbacks fire on the SDK's own threads;
 each translation onto it (`create_task` when already on the loop thread, else
 `run_coroutine_threadsafe`), so a cloud STT → DeepL pipeline is thread-safe.
 Keys (and Azure region / Google credentials path) come from the `SecretStore`
-under per-vendor account names and are never logged. A separate
-`create_composed_provider(speech_id, translation_id, store)` builds these
-pipelines programmatically; wiring them into the GUI selector (which needs
-multi-credential settings) is the next increment.
+under per-vendor account names and are never logged. The composed cloud
+pipelines (`google-deepl`, `azure-deepl`) are registered in the realtime
+provider registry and appear in the GUI selector. Each provider declares its
+`credentials` (a tuple of `CredentialField`: account name, i18n label,
+secret-vs-plain), and the Settings dialog renders **dynamic credential fields**
+for whichever provider is selected (e.g. picking "Azure Speech → DeepL" shows
+Azure key + region + DeepL key). `MainWindow` saves each entered value under its
+account; empty fields leave the stored value unchanged. `test_api` runs a live
+check only for OpenAI; for composed cloud providers it verifies that all
+required credentials are present (the SDKs are not run here).
 
 ### Translation providers (v1.2)
 
