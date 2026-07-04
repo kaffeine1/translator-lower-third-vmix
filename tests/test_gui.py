@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """GUI tests (Milestone 2) — run headless with the Qt offscreen platform."""
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def _make_window(tmp_path, services=None, store=None):
 
 
 def _process_until(qapp, predicate, timeout_s=3.0) -> bool:
-    """Pompa eventi Qt finché predicate() è vero (per gli esiti asincroni)."""
+    """Pump Qt events until predicate() is true (for async outcomes)."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         qapp.processEvents()
@@ -113,18 +113,18 @@ def test_diagnostics_text_has_version_and_paths_no_secret(qapp, tmp_path):
     window = _make_window(tmp_path, store=store)
     text = window.diagnostics_text()
     assert __version__ in text
-    assert "TranslatorLowerThird" in text  # percorsi config/log
+    assert "TranslatorLowerThird" in text  # config/log paths
     assert "Chiave API salvata: sì" in text
-    # l'About mostra l'autore e le info essenziali
+    # the About shows the author and the essential info
     assert "Michele Dipace" in text
     assert "michele.dipace@kaffeine.net" in text
-    # la chiave in chiaro non deve mai comparire nella schermata Info/About
+    # the plaintext key must never appear in the Info/About screen
     assert "supersegretissima" not in text
 
 
 def test_translation_error_shown_without_modal(qapp, tmp_path):
-    # gli errori in diretta finiscono nella status bar e nel semaforo vMix,
-    # senza dialoghi modali che interromperebbero l'evento
+    # live errors end up in the status bar and in the vMix status light,
+    # without modal dialogs that would interrupt the event
     window = _make_window(tmp_path)
     window.audio_light.set_state(StatusState.GREEN)
     window._services._emit_error("vMix non raggiungibile")
@@ -134,8 +134,8 @@ def test_translation_error_shown_without_modal(qapp, tmp_path):
 
 
 def test_test_buttons_update_lights(qapp, tmp_path):
-    # Test API e Test vMix girano su thread di lavoro: l'esito arriva
-    # in modo asincrono sul thread GUI
+    # Test API and Test vMix run on worker threads: the outcome arrives
+    # asynchronously on the GUI thread
     services = MockAppServices()
     window = _make_window(tmp_path, services=services)
 
@@ -150,8 +150,8 @@ def test_test_buttons_update_lights(qapp, tmp_path):
 
 
 def test_async_exception_reenables_button_and_clears_status(qapp, tmp_path, monkeypatch):
-    # regressione: se il servizio solleva, il pulsante torna attivo, il
-    # semaforo va rosso e la status bar non resta su "in corso…"
+    # regression: if the service raises, the button becomes active again, the
+    # status light goes red and the status bar does not stay on "in corso…"
     from PySide6.QtWidgets import QMessageBox
 
     class ExplodingServices(MockAppServices):
@@ -192,7 +192,7 @@ def test_async_test_disables_button_while_running(qapp, tmp_path):
 
     window = _make_window(tmp_path, services=SlowServices())
     window.btn_test_vmix.click()
-    # la GUI resta reattiva e il pulsante è disabilitato durante la chiamata
+    # the GUI stays responsive and the button is disabled during the call
     qapp.processEvents()
     assert not window.btn_test_vmix.isEnabled()
     release.set()
@@ -201,15 +201,15 @@ def test_async_test_disables_button_while_running(qapp, tmp_path):
 
 
 def test_audio_test_toggle_detects_signal(qapp, tmp_path):
-    services = MockAppServices()  # mock_levels di default sopra soglia
+    services = MockAppServices()  # default mock_levels above threshold
     window = _make_window(tmp_path, services=services)
 
-    window.btn_test_audio.click()  # avvia il monitor
+    window.btn_test_audio.click()  # start the monitor
     qapp.processEvents()
     assert services.monitoring is True
     assert window.btn_test_audio.text() == "Ferma Test"
 
-    window.btn_test_audio.click()  # ferma il monitor
+    window.btn_test_audio.click()  # stop the monitor
     assert services.monitoring is False
     assert window.btn_test_audio.text() == "Test Audio"
     assert window.audio_light.state == StatusState.GREEN
@@ -260,7 +260,7 @@ def test_audio_test_auto_stops_via_timer(qapp, tmp_path):
     assert timer.isSingleShot()
     assert timer.interval() == 5000
 
-    timer.timeout.emit()  # scatta il timeout senza aspettare 5 secondi reali
+    timer.timeout.emit()  # trigger the timeout without waiting 5 real seconds
     assert services.monitoring is False
     assert window.btn_test_audio.text() == "Test Audio"
     assert window.audio_light.state == StatusState.GREEN
@@ -268,16 +268,16 @@ def test_audio_test_auto_stops_via_timer(qapp, tmp_path):
 
 
 def test_stale_levels_after_test_end_do_not_touch_meter(qapp, tmp_path):
-    # regressione: con audio reale i livelli arrivano in coda dal thread
-    # PortAudio e possono essere consegnati DOPO la fine del test
+    # regression: with real audio the levels arrive queued from the
+    # PortAudio thread and may be delivered AFTER the end of the test
     services = MockAppServices()
     window = _make_window(tmp_path, services=services)
     window.btn_test_audio.click()
     qapp.processEvents()
-    window.btn_test_audio.click()  # fine test: meter azzerato
+    window.btn_test_audio.click()  # end of test: meter reset to zero
     assert window.level_meter.value() == 0
 
-    window.audio_level.emit(0.5)  # livello "in volo" consegnato in ritardo
+    window.audio_level.emit(0.5)  # "in-flight" level delivered late
     qapp.processEvents()
     assert window.level_meter.value() == 0
 
@@ -346,11 +346,11 @@ def test_settings_dialog_api_key_field_is_password(qapp):
 
 
 def test_settings_dialog_preserves_values_not_in_combo_lists(qapp):
-    # regressione: device scollegato o lingua fuori elenco non devono essere
-    # riscritti silenziosamente al salvataggio
+    # regression: a disconnected device or a language off the list must not be
+    # silently rewritten on save
     config = AppConfig()
-    config.audio.device_id = 5  # non presente nella lista mock (0 e 1)
-    config.target_language = "de"  # non presente in LANGUAGES
+    config.audio.device_id = 5  # not present in the mock list (0 and 1)
+    config.target_language = "de"  # not present in LANGUAGES
     dialog = SettingsDialog(config, MockAppServices().list_audio_devices())
     result = dialog.result_config()
     assert result.audio.device_id == 5
@@ -360,8 +360,8 @@ def test_settings_dialog_preserves_values_not_in_combo_lists(qapp):
 def test_apply_settings_save_failure_is_visible_and_keeps_old_config(
     qapp, tmp_path, monkeypatch
 ):
-    # regressione: errore disco durante il salvataggio deve mostrare un
-    # messaggio e non lasciare la config in memoria divergente dal disco
+    # regression: a disk error during save must show a
+    # message and not leave the in-memory config diverging from disk
     from PySide6.QtWidgets import QMessageBox
 
     window = _make_window(tmp_path)
@@ -380,7 +380,7 @@ def test_apply_settings_save_failure_is_visible_and_keeps_old_config(
     new_config.vmix.input = "NuovoTitolo"
     assert window._apply_settings(new_config, "sk-test-key-123456789") is False
     assert shown.get("critical") is True
-    assert window._config is old_config  # niente divergenza memoria/disco
+    assert window._config is old_config  # no memory/disk divergence
 
 
 # ---------------------------------------------------------------- wizard
@@ -406,8 +406,8 @@ def test_wizard_has_six_pages(qapp):
 
 
 def test_wizard_vmix_test_uses_typed_values(qapp):
-    # il test vMix del wizard deve usare i valori appena digitati,
-    # non la config di partenza
+    # the wizard's vMix test must use the values just typed,
+    # not the starting config
     services = MockAppServices()
     wizard = FirstRunWizard(AppConfig(), services.list_audio_devices(), services)
     wizard.host_edit.setText("192.168.1.20")

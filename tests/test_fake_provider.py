@@ -1,6 +1,6 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""FakeTranslationProvider tests (Milestone 6) — asyncio, nessuna rete."""
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""FakeTranslationProvider tests (Milestone 6) — asyncio, no network."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def test_emits_partial_and_final_text():
         provider = FakeTranslationProvider(script=script, step_delay=0.0, loop=False)
         partials, finals, errors = _collect(provider)
         await provider.connect(ProviderConfig())
-        # attende il completamento del task interno
+        # wait for the internal task to complete
         await asyncio.wait_for(provider._task, timeout=2)
         return partials, finals, errors
 
@@ -51,13 +51,13 @@ def test_emits_error_event():
 
     partials, finals, errors = asyncio.run(run())
     assert errors and "Connessione persa" in errors[0]
-    # dopo l'errore non arrivano altri finali
+    # after the error no more finals arrive
     assert finals == []
 
 
 def test_clean_shutdown_cancels_task():
     async def run():
-        provider = FakeTranslationProvider(step_delay=10.0)  # lungo: non finisce
+        provider = FakeTranslationProvider(step_delay=10.0)  # long: does not finish
         _collect(provider)
         await provider.connect(ProviderConfig())
         task = provider._task
@@ -73,7 +73,7 @@ def test_send_audio_is_accepted_and_ignored():
     async def run():
         provider = FakeTranslationProvider(step_delay=10.0)
         await provider.connect(ProviderConfig())
-        await provider.send_audio(b"\x00\x01" * 100)  # non deve sollevare
+        await provider.send_audio(b"\x00\x01" * 100)  # must not raise
         await provider.close()
 
     asyncio.run(run())

@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Google/Azure SpeechProvider tests (v1.2) — motore finto, nessun SDK né rete.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Google/Azure SpeechProvider tests (v1.2) — fake engine, no SDK or network.
 
-I provider reali richiedono i pacchetti opzionali (azure-cognitiveservices-speech,
-google-cloud-speech) e non vengono esercitati qui.
+The real providers require the optional packages (azure-cognitiveservices-speech,
+google-cloud-speech) and are not exercised here.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from app.providers.google_speech import GoogleSpeechError, GoogleSpeechProvider
 
 
 class FakeEngine:
-    """Motore finto: registra il ciclo di vita e permette di simulare eventi."""
+    """Fake engine: records the life cycle and allows simulating events."""
 
     def __init__(self, **opts) -> None:
         self.opts = opts
@@ -36,7 +36,7 @@ class FakeEngine:
     def stop(self) -> None:
         self.stopped = True
 
-    # helper per i test: simula il riconoscimento
+    # test helper: simulates recognition
     def emit_partial(self, text: str) -> None:
         self.opts["on_partial"](text)
 
@@ -47,7 +47,7 @@ class FakeEngine:
         self.opts["on_error"](text)
 
 
-# ---------------------------------------------------------------- lingua
+# ---------------------------------------------------------------- language
 
 
 def test_language_mapping():
@@ -120,10 +120,10 @@ def test_azure_missing_region_raises():
 
 
 def test_azure_real_engine_missing_sdk_is_readable():
-    # senza il pacchetto SDK installato, il motore reale dà un errore leggibile
+    # without the SDK package installed, the real engine gives a readable error
     async def run():
         store = _azure_store()
-        provider = AzureSpeechProvider(store)  # factory reale
+        provider = AzureSpeechProvider(store)  # real factory
         with pytest.raises(AzureSpeechError) as excinfo:
             await provider.connect(ProviderConfig())
         assert "azure-cognitiveservices-speech" in str(excinfo.value)
@@ -174,7 +174,7 @@ def test_google_real_engine_missing_sdk_is_readable():
     async def run():
         store = InMemorySecretStore()
         store.set_api_key("google", "/x.json")
-        provider = GoogleSpeechProvider(store)  # factory reale
+        provider = GoogleSpeechProvider(store)  # real factory
         with pytest.raises(GoogleSpeechError) as excinfo:
             await provider.connect(ProviderConfig())
         assert "google-cloud-speech" in str(excinfo.value)
@@ -186,7 +186,7 @@ def test_google_real_engine_missing_sdk_is_readable():
 
 
 def test_cloud_speech_composed_with_deepl():
-    # Azure Speech (finto) → DeepL (mock httpx): pipeline cloud completa
+    # Azure Speech (fake) → DeepL (mock httpx): full cloud pipeline
     import httpx
 
     from app.providers.composed import ComposedRealtimeProvider

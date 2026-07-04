@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """OpenAIRealtimeTranslationProvider tests (Milestone 7).
 
-Nessuna chiamata di rete reale: il connettore WebSocket è iniettato con un
-finto. Il live test è attivo SOLO con OPENAI_API_KEY e RUN_LIVE_TESTS=1.
+No real network call: the WebSocket connector is injected with a
+fake one. The live test is active ONLY with OPENAI_API_KEY and RUN_LIVE_TESTS=1.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ from app.providers.openai_realtime import (
 
 
 class FakeWebsocket:
-    """Finto WebSocket: consegna messaggi predefiniti, poi blocca finché non
-    viene chiuso (come una connessione viva in attesa)."""
+    """Fake WebSocket: delivers predefined messages, then blocks until it
+    is closed (like a live connection waiting)."""
 
     def __init__(self, incoming: list[str] | None = None) -> None:
         self._incoming = list(incoming or [])
@@ -41,7 +41,7 @@ class FakeWebsocket:
     async def recv(self) -> str:
         if self._incoming:
             return self._incoming.pop(0)
-        await self._closed_event.wait()  # resta connesso finché non si chiude
+        await self._closed_event.wait()  # stays connected until it is closed
         raise ConnectionError("closed")
 
     async def close(self) -> None:
@@ -83,7 +83,7 @@ def test_handle_message_partial_and_final():
     provider._handle_message(json.dumps({"type": "response.text.delta", "delta": " mondo"}))
     provider._handle_message(json.dumps({"type": "response.text.done", "text": "Ciao mondo"}))
 
-    assert partials == ["Ciao", "Ciao mondo"]  # accumulo incrementale
+    assert partials == ["Ciao", "Ciao mondo"]  # incremental accumulation
     assert finals == ["Ciao mondo"]
     assert errors == []
 
@@ -101,7 +101,7 @@ def test_handle_message_final_falls_back_to_buffer():
     provider, _ws = _provider()
     _partials, finals, _errors = _sink(provider)
     provider._handle_message(json.dumps({"type": "response.text.delta", "delta": "Buonasera"}))
-    provider._handle_message(json.dumps({"type": "response.text.done"}))  # senza 'text'
+    provider._handle_message(json.dumps({"type": "response.text.done"}))  # without 'text'
     assert finals == ["Buonasera"]
 
 
@@ -140,11 +140,11 @@ def test_connect_sends_session_config_and_never_logs_key():
         calls = []
         provider, ws = _provider(connector_calls=calls)
         await provider.connect(ProviderConfig(source_language="es", target_language="it"))
-        # header con Bearer presente ma la key non deve finire altrove
+        # Bearer header present but the key must not end up anywhere else
         url, headers = calls[0]
         assert "model=" in url
         assert headers["Authorization"].startswith("Bearer ")
-        # primo messaggio inviato: configurazione di sessione
+        # first message sent: session configuration
         session = json.loads(ws.sent[0])
         assert session["type"] == "session.update"
         assert session["session"]["input_audio_format"] == "pcm16"
@@ -178,7 +178,7 @@ def test_send_audio_encodes_base64():
 
 def test_connect_missing_key_raises():
     async def run():
-        store = InMemorySecretStore()  # nessuna key
+        store = InMemorySecretStore()  # no key
 
         async def connector(url, headers):
             raise AssertionError("non deve nemmeno tentare la connessione")
@@ -219,7 +219,7 @@ def test_receive_loop_emits_events_end_to_end():
         provider, ws = _provider(incoming=incoming)
         partials, finals, _errors = _sink(provider)
         await provider.connect(ProviderConfig())
-        # lascia processare i messaggi in coda
+        # let the queued messages be processed
         for _ in range(10):
             await asyncio.sleep(0)
         await provider.close()
@@ -241,7 +241,7 @@ def test_check_api_key_success():
         async def connector(url, headers):
             return FakeWebsocket([json.dumps({"type": "session.created"})])
 
-        await check_api_key(store, connector=connector)  # non deve sollevare
+        await check_api_key(store, connector=connector)  # must not raise
 
     asyncio.run(run())
 
@@ -271,7 +271,7 @@ def test_check_api_key_auth_failure():
     asyncio.run(run())
 
 
-# ---------------------------------------------------------------- selezione provider
+# ---------------------------------------------------------------- provider selection
 
 
 def test_live_services_uses_fake_without_key():

@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Tests for rotating log setup and secret masking in logs."""
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ def test_api_keys_never_reach_log_file(log_dir):
 
 
 def test_exception_tracebacks_are_masked(log_dir):
-    # regressione: logger.exception non deve scrivere su disco il testo
-    # dell'eccezione in chiaro se contiene una chiave
+    # regression: logger.exception must not write to disk the plaintext
+    # exception text if it contains a key
     logger = logging.getLogger("app")
     try:
         raise RuntimeError("provider refused: api_key=SEGRETO999XYZ non valida")
@@ -82,7 +82,7 @@ def test_exception_tracebacks_are_masked(log_dir):
     text = (log_dir / "app.log").read_text(encoding="utf-8")
     assert "SEGRETO999XYZ" not in text
     assert "sk-abcdef" not in text
-    assert "RuntimeError" in text  # il traceback resta, senza segreti
+    assert "RuntimeError" in text  # the traceback stays, without secrets
     assert "Traceback" in text
 
 

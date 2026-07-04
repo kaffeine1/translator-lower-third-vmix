@@ -1,12 +1,12 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Cattura audio: interfaccia AudioInput e implementazione sounddevice.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Audio capture: AudioInput interface and sounddevice implementation.
 
-I chunk emessi sono PCM16 little-endian al sample rate richiesto (default
-16 kHz mono, il formato atteso dai provider). Il callback arriva dal thread
-PortAudio: i consumatori NON devono toccare la GUI da lì.
+The emitted chunks are little-endian PCM16 at the requested sample rate
+(default 16 kHz mono, the format expected by providers). The callback arrives
+from the PortAudio thread: consumers must NOT touch the GUI from there.
 
-L'audio non viene mai scritto su disco.
+Audio is never written to disk.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ logger = logging.getLogger("app.audio")
 
 ChunkCallback = Callable[[bytes], None]
 
-# 100 ms di audio per chunk: reattivo per il meter, efficiente per i provider
+# 100 ms of audio per chunk: responsive for the meter, efficient for providers
 CHUNK_SECONDS = 0.1
 
 
@@ -53,12 +53,12 @@ class AudioInput(abc.ABC):
 
 
 class SoundDeviceAudioInput(AudioInput):
-    """Cattura tramite sounddevice/PortAudio.
+    """Capture via sounddevice/PortAudio.
 
-    device_id None usa l'ingresso predefinito di Windows. Se il dispositivo
-    non supporta nativamente il sample rate richiesto, PortAudio (in shared
-    mode) lo converte; in caso contrario start() solleva AudioInputError con
-    un messaggio comprensibile.
+    device_id None uses the Windows default input. If the device does not
+    natively support the requested sample rate, PortAudio (in shared mode)
+    converts it; otherwise start() raises AudioInputError with an
+    understandable message.
     """
 
     def __init__(self) -> None:
@@ -77,8 +77,8 @@ class SoundDeviceAudioInput(AudioInput):
     ) -> None:
         if self._stream is not None:
             self.stop()
-        # solleva già AudioInputError leggibile se il dispositivo salvato
-        # non è più collegato
+        # already raises a readable AudioInputError if the saved device
+        # is no longer connected
         device_index = resolve_device_index(device_id)
         self._on_chunk = on_chunk
         stream = None
@@ -95,8 +95,8 @@ class SoundDeviceAudioInput(AudioInput):
             )
             stream.start()
         except Exception as exc:
-            # senza close() lo stream aperto terrebbe occupato il dispositivo
-            # fino alla chiusura dell'app
+            # without close() the open stream would keep the device busy
+            # until the app is closed
             if stream is not None:
                 try:
                     stream.close()
@@ -118,8 +118,8 @@ class SoundDeviceAudioInput(AudioInput):
         )
 
     def _callback(self, indata, frames, time_info, status) -> None:
-        # Thread PortAudio: solo copia e inoltro, niente GUI e niente log
-        # per-chunk (arriva 10 volte al secondo).
+        # PortAudio thread: only copy and forward, no GUI and no per-chunk
+        # logging (it arrives 10 times per second).
         callback = self._on_chunk
         if callback is not None:
             callback(bytes(indata))
@@ -141,10 +141,10 @@ class SoundDeviceAudioInput(AudioInput):
 
 
 class FakeAudioInput(AudioInput):
-    """Implementazione finta per test e demo: chunk iniettati con feed().
+    """Fake implementation for tests and demos: chunks injected via feed().
 
-    Nessun hardware, nessun thread: feed() consegna il chunk in modo sincrono
-    al callback registrato da start().
+    No hardware, no thread: feed() delivers the chunk synchronously to the
+    callback registered by start().
     """
 
     def __init__(self) -> None:
@@ -174,7 +174,7 @@ class FakeAudioInput(AudioInput):
         self._running = True
 
     def feed(self, chunk: bytes) -> None:
-        """Consegna un chunk come farebbe il thread PortAudio."""
+        """Deliver a chunk as the PortAudio thread would."""
         if self._running and self._on_chunk is not None:
             self._on_chunk(chunk)
 

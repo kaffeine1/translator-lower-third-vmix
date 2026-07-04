@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Configuration: models, manager, and secure secret storage."""
 
 from app.config.manager import ConfigManager, get_config_dir, get_log_dir

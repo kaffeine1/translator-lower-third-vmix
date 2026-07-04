@@ -1,8 +1,8 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """SpeechProvider / TranslationProvider split + ComposedRealtimeProvider (v1.1).
 
-Nessuna rete: tutto con implementazioni finte e asyncio.
+No network: everything with fake implementations and asyncio.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def test_fake_speech_emits_source_text():
 
     partials, finals = asyncio.run(run())
     assert partials == ["Hola"]
-    assert finals == ["Hola a todos"]  # testo SORGENTE, non tradotto
+    assert finals == ["Hola a todos"]  # SOURCE text, not translated
 
 
 def test_fake_speech_clean_shutdown():
@@ -70,7 +70,7 @@ def test_fake_translator_maps_and_falls_back():
 
     mapped, passthrough = asyncio.run(run())
     assert mapped == "Ciao"
-    assert passthrough == "desconocido"  # fuori mappa: identità
+    assert passthrough == "desconocido"  # off the map: identity
 
 
 # ---------------------------------------------------------------- composed
@@ -86,14 +86,14 @@ def test_composed_translates_source_to_target():
         composed = ComposedRealtimeProvider(speech, translator)
         partials, finals, errors = _sink(composed)
         await composed.connect(ProviderConfig())
-        # lascia scorrere lo script e le traduzioni
+        # let the script and translations flow
         for _ in range(20):
             await asyncio.sleep(0)
         await composed.close()
         return partials, finals, errors
 
     partials, finals, errors = asyncio.run(run())
-    assert finals == ["Ciao a tutti"]  # tradotto
+    assert finals == ["Ciao a tutti"]  # translated
     assert "Ciao" in partials
     assert errors == []
 
@@ -105,15 +105,15 @@ def test_composed_is_a_realtime_provider():
 
 def test_composed_final_supersedes_stale_partial():
     async def run():
-        # traduttore lento sui parziali: il finale deve prevalere e i parziali
-        # in ritardo non devono riemergere dopo il finale
+        # translator slow on partials: the final must win and the late
+        # partials must not re-emerge after the final
         script = [("partial", "uno"), ("final", "uno due tre")]
         speech = FakeSpeechProvider(script=script, step_delay=0.0, loop=False)
 
         class SlowPartialTranslator(FakeTranslationTextProvider):
             async def translate(self, text: str) -> str:
                 if text == "uno":
-                    await asyncio.sleep(0.05)  # parziale lento
+                    await asyncio.sleep(0.05)  # slow partial
                 return {"uno": "1", "uno due tre": "1 2 3"}.get(text, text)
 
         composed = ComposedRealtimeProvider(speech, SlowPartialTranslator())
@@ -125,13 +125,13 @@ def test_composed_final_supersedes_stale_partial():
 
     partials, finals = asyncio.run(run())
     assert finals == ["1 2 3"]
-    # il parziale lento "1" è stato scartato perché superato dal finale
+    # the slow partial "1" was discarded because superseded by the final
     assert partials == []
 
 
 def test_composed_drops_translation_completed_after_close():
-    # regressione: se la traduzione finisce DOPO lo STOP, non deve emettere un
-    # sottotitolo stantìo (che finirebbe in onda a evento concluso)
+    # regression: if the translation finishes AFTER the STOP, it must not emit a
+    # stale subtitle (which would go on air after the event has ended)
     from app.providers.base import TranslationProvider
 
     async def run():
@@ -149,10 +149,10 @@ def test_composed_drops_translation_completed_after_close():
         finals: list[str] = []
         composed.on_final_text(finals.append)
         await composed.connect(ProviderConfig())
-        for _ in range(10):  # avvia la traduzione (resta in attesa sul gate)
+        for _ in range(10):  # start the translation (stays waiting on the gate)
             await asyncio.sleep(0)
-        await composed.close()  # STOP prima che la traduzione finisca
-        gate.set()  # ora la traduzione completa
+        await composed.close()  # STOP before the translation finishes
+        gate.set()  # now the translation completes
         for _ in range(10):
             await asyncio.sleep(0)
         return finals
@@ -170,7 +170,7 @@ def test_composed_provider_via_registry():
 
 
 def test_composed_runs_through_pipeline():
-    # end-to-end: il provider composto funziona nella TranslationPipeline reale
+    # end-to-end: the composed provider works in the real TranslationPipeline
     import threading
     import time
 

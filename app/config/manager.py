@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Load/save user configuration under Windows user profile paths.
 
 Non-sensitive settings only: config.yaml must never contain API keys.

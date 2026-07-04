@@ -1,12 +1,12 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec — build one-folder di Translator Lower Third for vMix.
+"""PyInstaller spec — one-folder build of Translator Lower Third for vMix.
 
-Costruisce dist/TranslatorLowerThird/TranslatorLowerThird.exe (nessuna console).
-PySide6 è gestito dai hook ufficiali di PyInstaller; qui raccogliamo le
-dipendenze meno ovvie: la DLL PortAudio di sounddevice, i backend di keyring e
-i sottomoduli usati dinamicamente.
+Builds dist/TranslatorLowerThird/TranslatorLowerThird.exe (no console).
+PySide6 is handled by the official PyInstaller hooks; here we collect the
+less obvious dependencies: sounddevice's PortAudio DLL, the keyring backends
+and the dynamically used submodules.
 
 Build:  pyinstaller --noconfirm --clean TranslatorLowerThird.spec
 """
@@ -15,31 +15,31 @@ import os
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-# --- percorsi ---------------------------------------------------------------
-# SPECPATH è la cartella dello spec (radice del repository): serve perché
-# l'entry point è app/main.py ma importa il pacchetto "app".
-ROOT = os.path.abspath(SPECPATH)  # noqa: F821 (SPECPATH iniettato da PyInstaller)
+# --- paths ------------------------------------------------------------------
+# SPECPATH is the spec's folder (repository root): needed because the entry
+# point is app/main.py but it imports the "app" package.
+ROOT = os.path.abspath(SPECPATH)  # noqa: F821 (SPECPATH injected by PyInstaller)
 ICON = os.path.join(ROOT, "assets", "icon.ico")
 icon_arg = ICON if os.path.exists(ICON) else None
 
-# --- dipendenze da raccogliere ---------------------------------------------
+# --- dependencies to collect ------------------------------------------------
 datas = []
 binaries = []
 hiddenimports = []
 
-# icona come file dati: usata a runtime per l'icona della finestra (oltre che
-# come icona dell'exe)
+# icon as a data file: used at runtime for the window icon (as well as for
+# the exe icon)
 if os.path.exists(ICON):
     datas += [(ICON, "assets")]
 
-# sounddevice porta con sé la DLL PortAudio (_sounddevice_data)
+# sounddevice ships the PortAudio DLL (_sounddevice_data)
 for _pkg in ("sounddevice",):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b
     hiddenimports += _h
 
-# keyring carica i backend a runtime tramite entry point / import dinamici
+# keyring loads its backends at runtime via entry points / dynamic imports
 hiddenimports += collect_submodules("keyring.backends")
 hiddenimports += [
     "keyring.backends.Windows",
@@ -47,8 +47,8 @@ hiddenimports += [
     "win32ctypes.pywin32.win32cred",
 ]
 
-# websockets/httpx/yaml/numpy sono coperti dai loro hook o sono puri; il
-# provider OpenAI è importato in modo lazy, quindi lo dichiariamo esplicito
+# websockets/httpx/yaml/numpy are covered by their hooks or are pure; the
+# OpenAI provider is imported lazily, so we declare it explicitly
 hiddenimports += [
     "app.providers.openai_realtime",
     "app.providers.fake",
@@ -80,7 +80,7 @@ exe = EXE(  # noqa: F821
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,  # app GUI: nessuna finestra console
+    console=False,  # GUI app: no console window
     icon=icon_arg,
 )
 

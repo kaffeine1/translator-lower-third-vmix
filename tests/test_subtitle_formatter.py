@@ -1,6 +1,6 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""SubtitleFormatter tests (Milestone 5) — clock finto, nessuna attesa reale."""
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""SubtitleFormatter tests (Milestone 5) — fake clock, no real waiting."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def test_wrap_respects_max_chars_per_line():
 
 
 def test_wrap_overflow_keeps_last_lines():
-    # in diretta contano le parole più recenti: si scartano le righe iniziali
+    # live, the most recent words matter: the initial lines are discarded
     text = "inizio vecchio " + "parole nuove importanti finali"
     lines = wrap_lines(text, max_chars=10, max_lines=2)
     assert len(lines) == 2
@@ -63,7 +63,7 @@ def test_clean_text_collapses_whitespace():
     assert clean_text("  Hola   mundo \n") == "Hola mundo"
 
 
-# ---------------------------------------------------------------- finali
+# ---------------------------------------------------------------- finals
 
 
 def test_final_published_immediately():
@@ -76,7 +76,7 @@ def test_identical_consecutive_finals_deduplicated():
     formatter, published, _clock = _formatter()
     formatter.feed_final("Ciao a tutti")
     formatter.feed_final("Ciao a tutti")
-    formatter.feed_final("  Ciao   a tutti ")  # anche dopo pulizia spazi
+    formatter.feed_final("  Ciao   a tutti ")  # even after whitespace cleanup
     assert published == ["Ciao a tutti"]
 
 
@@ -96,7 +96,7 @@ def test_empty_final_ignored():
     assert published == []
 
 
-# ---------------------------------------------------------------- parziali
+# ---------------------------------------------------------------- partials
 
 
 def test_partial_not_published_immediately():
@@ -110,15 +110,15 @@ def test_partial_not_published_immediately():
 def test_partial_published_when_stable():
     formatter, published, clock = _formatter()
     formatter.feed_partial("Hola a todos")
-    clock.advance(1.3)  # oltre min_update_interval_ms (1200)
+    clock.advance(1.3)  # beyond min_update_interval_ms (1200)
     formatter.tick()
     assert published == ["Hola a todos"]
 
 
 def test_growing_partial_published_at_cadence_not_per_word():
     formatter, published, clock = _formatter()
-    # frase che cresce ogni 0.3 s: mai stabile, ma la cadenza garantisce
-    # un aggiornamento circa ogni intervallo
+    # phrase that grows every 0.3 s: never stable, but the cadence guarantees
+    # about one update per interval
     words = "uno due tre quattro cinque sei sette otto".split()
     text = ""
     for word in words:
@@ -126,7 +126,7 @@ def test_growing_partial_published_at_cadence_not_per_word():
         formatter.feed_partial(text)
         clock.advance(0.3)
         formatter.tick()
-    # 8 parole in 2.4 s: molti meno aggiornamenti delle parole
+    # 8 words in 2.4 s: far fewer updates than words
     assert 1 <= len(published) <= 3
 
 
@@ -135,7 +135,7 @@ def test_final_clears_pending_partial():
     formatter.feed_partial("Hola a")
     formatter.feed_final("Hola a todos")
     assert published == ["Hola a todos"]
-    # il parziale in sospeso non deve riemergere ai tick successivi
+    # the pending partial must not re-emerge on subsequent ticks
     clock.advance(5)
     formatter.tick()
     assert published == ["Hola a todos"]
@@ -158,13 +158,13 @@ def test_empty_partial_ignored():
     assert published == []
 
 
-# ---------------------------------------------------------------- silenzio
+# ---------------------------------------------------------------- silence
 
 
 def test_clear_after_silence():
     formatter, published, clock = _formatter()
     formatter.feed_final("Ultima frase")
-    clock.advance(8.5)  # oltre clear_after_silence_seconds (8)
+    clock.advance(8.5)  # beyond clear_after_silence_seconds (8)
     formatter.tick()
     assert published == ["Ultima frase", ""]
 
@@ -182,7 +182,7 @@ def test_new_text_resets_silence_timer():
     formatter.feed_final("Prima")
     clock.advance(6)
     formatter.feed_final("Seconda")
-    clock.advance(6)  # 12 s dalla prima, ma solo 6 dalla seconda
+    clock.advance(6)  # 12 s from the first, but only 6 from the second
     formatter.tick()
     assert "" not in published
 
@@ -193,10 +193,10 @@ def test_hold_prevents_clear_too_soon_after_publish():
     config.hold_seconds = 5
     formatter, published, clock = _formatter(config)
     formatter.feed_final("Frase breve")
-    clock.advance(3)  # silenzio (>2) ma hold non trascorso (<5)
+    clock.advance(3)  # silence (>2) but hold not elapsed (<5)
     formatter.tick()
     assert published == ["Frase breve"]
-    clock.advance(3)  # ora anche hold superato
+    clock.advance(3)  # now hold is also exceeded
     formatter.tick()
     assert published == ["Frase breve", ""]
 
@@ -222,19 +222,19 @@ def test_clear_not_repeated():
 
 
 def test_unfinalized_partial_does_not_resurrect_after_silence_clear():
-    # regressione: parziale senza finale (VAD perso, disconnessione) →
-    # dopo la pulizia per silenzio NON deve riapparire a intermittenza
+    # regression: partial without final (VAD lost, disconnection) →
+    # after the silence cleanup it must NOT reappear intermittently
     formatter, published, clock = _formatter()
     formatter.feed_partial("Hola a todos bienvenidos")
     clock.advance(1.3)
-    formatter.tick()  # pubblicato come parziale stabile
+    formatter.tick()  # published as a stable partial
     assert published == ["Hola a todos bienvenidos"]
 
     clock.advance(8.5)
-    formatter.tick()  # pulizia per silenzio
+    formatter.tick()  # silence cleanup
     assert published[-1] == ""
 
-    # simula 30 secondi di tick a 250 ms: niente deve riapparire
+    # simulate 30 seconds of ticks at 250 ms: nothing must reappear
     for _ in range(120):
         clock.advance(0.25)
         formatter.tick()

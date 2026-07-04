@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Rotating log files with secret masking.
 
 Layout under %LOCALAPPDATA%\\TranslatorLowerThird\\logs\\:
@@ -45,7 +45,7 @@ def redact_secrets(text: str) -> str:
     return text
 
 
-# Formatter usato solo per pre-renderizzare i traceback nel filtro
+# Formatter used only to pre-render tracebacks in the filter
 _EXC_FORMATTER = logging.Formatter()
 
 

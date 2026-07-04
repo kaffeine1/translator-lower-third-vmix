@@ -1,12 +1,12 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Registro dei provider di traduzione (base v1.1).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Registry of translation providers (v1.1 base).
 
-Un unico punto in cui i provider disponibili sono dichiarati con id, nome
-visualizzato e se richiedono una chiave API. La GUI popola il selettore da qui
-e i servizi creano il provider tramite create_provider(): aggiungere un provider
-futuro (Google, Azure, self-hosted…) significa registrarlo qui, senza toccare
-GUI o servizi.
+A single place where the available providers are declared with id, display
+name, and whether they require an API key. The GUI populates the selector from
+here and the services create the provider via create_provider(): adding a
+future provider (Google, Azure, self-hosted…) means registering it here, without
+touching the GUI or services.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from app.providers.base import (
 class ProviderInfo:
     id: str
     display_name: str
-    # nomi degli account secure-storage la cui chiave è necessaria; vuoto = nessuna
+    # names of the secure-storage accounts whose key is required; empty = none
     required_key_names: tuple[str, ...] = ()
 
     @property
@@ -33,7 +33,7 @@ class ProviderInfo:
         return bool(self.required_key_names)
 
 
-# Ordine = ordine nel selettore della GUI (provider realtime completi).
+# Order = order in the GUI selector (complete realtime providers).
 _REGISTRY: dict[str, ProviderInfo] = {
     "openai": ProviderInfo("openai", "OpenAI Realtime", ("openai",)),
     "fake": ProviderInfo("fake", "Demo (senza API)"),
@@ -54,8 +54,8 @@ def get_provider_info(provider_id: str) -> ProviderInfo | None:
 def create_provider(
     provider_id: str, secret_store: SecretStore | None
 ) -> RealtimeTranslationProvider:
-    """Istanzia il provider realtime richiesto. Import lazy: i moduli pesanti
-    (OpenAI/websockets, SDK cloud) si caricano solo se servono davvero."""
+    """Instantiates the requested realtime provider. Lazy import: heavy modules
+    (OpenAI/websockets, cloud SDKs) load only if they are actually needed."""
     if provider_id == "fake":
         from app.providers.fake import FakeTranslationProvider
 
@@ -72,8 +72,8 @@ def create_provider(
 
 
 # --------------------------------------------------------------------------- #
-# SpeechProvider (audio → testo sorgente): usati DENTRO un composto insieme a
-# un TranslationProvider. Non compaiono nel selettore GUI realtime.
+# SpeechProvider (audio → source text): used INSIDE a composed provider together
+# with a TranslationProvider. They do not appear in the realtime GUI selector.
 # --------------------------------------------------------------------------- #
 
 _SPEECH_REGISTRY: dict[str, ProviderInfo] = {
@@ -112,10 +112,10 @@ def create_speech_provider(
 def create_composed_provider(
     speech_id: str, translation_id: str, secret_store: SecretStore | None
 ) -> RealtimeTranslationProvider:
-    """Costruisce un ComposedRealtimeProvider da uno SpeechProvider e un
-    TranslationProvider (es. 'google' + 'deepl'). È la via programmatica per
-    combinare provider cloud; il collegamento nella GUI (con più credenziali)
-    arriverà in un incremento successivo."""
+    """Builds a ComposedRealtimeProvider from a SpeechProvider and a
+    TranslationProvider (e.g. 'google' + 'deepl'). It is the programmatic way to
+    combine cloud providers; wiring it into the GUI (with multiple credentials)
+    will come in a later increment."""
     from app.providers.composed import ComposedRealtimeProvider
 
     return ComposedRealtimeProvider(
@@ -125,9 +125,9 @@ def create_composed_provider(
 
 
 # --------------------------------------------------------------------------- #
-# TranslationProvider (solo testo): usati DENTRO un ComposedRealtimeProvider,
-# insieme a uno SpeechProvider. Non compaiono nel selettore GUI dei provider
-# realtime perché da soli non producono sottotitoli.
+# TranslationProvider (text only): used INSIDE a ComposedRealtimeProvider,
+# together with a SpeechProvider. They do not appear in the realtime provider
+# GUI selector because on their own they do not produce subtitles.
 # --------------------------------------------------------------------------- #
 
 _TRANSLATION_REGISTRY: dict[str, ProviderInfo] = {

@@ -1,15 +1,15 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""VmixOutput — client HTTP API di vMix.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""VmixOutput — vMix HTTP API client.
 
 Endpoint:
     http://HOST:PORT/api/?Function=SetText&Input=INPUT&SelectedName=FIELD&Value=TEXT
 
-I parametri sono sempre codificati dal client HTTP (mai concatenazione di
-stringhe). Timeout brevi e un solo retry sugli errori di trasporto: durante
-una diretta è meglio perdere un aggiornamento che accodare richieste lente.
-Le chiamate sono bloccanti: i chiamanti GUI devono eseguirle fuori dal thread
-Qt (vedi MainWindow._call_service_async).
+Parameters are always encoded by the HTTP client (never string
+concatenation). Short timeouts and a single retry on transport errors: during
+a live show it is better to drop an update than to queue slow requests.
+Calls are blocking: GUI callers must run them off the Qt thread
+(see MainWindow._call_service_async).
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ import httpx
 logger = logging.getLogger("app.outputs.vmix")
 
 DEFAULT_TIMEOUT_S = 2.0
-ATTEMPTS = 2  # 1 tentativo + 1 retry leggero sugli errori di trasporto
+ATTEMPTS = 2  # 1 attempt + 1 light retry on transport errors
 
 TEST_PHRASE = "Test sottopancia"
 
 
 class VmixError(Exception):
-    """Errore vMix con messaggio leggibile dall'operatore (in italiano)."""
+    """vMix error with an operator-readable message (in Italian)."""
 
 
 class VmixOutput:
@@ -51,13 +51,13 @@ class VmixOutput:
     # ------------------------------------------------------------------ API
 
     def test_connection(self) -> str:
-        """Verifica che /api risponda; restituisce la versione vMix se leggibile."""
+        """Check that /api responds; return the vMix version if readable."""
         response = self._get({})
         try:
             root = ET.fromstring(response.text)
             return root.findtext("version", default="")
         except ET.ParseError:
-            # raggiungibile ma XML inatteso: la connessione resta valida
+            # reachable but unexpected XML: the connection is still valid
             return ""
 
     def set_text(self, text: str) -> None:
@@ -106,8 +106,8 @@ class VmixOutput:
                 )
                 continue
             if response.status_code != 200:
-                # vMix spiega l'errore nel corpo ("Invalid input name…"):
-                # va nei log o il pulsante Apri Log non aggiunge nulla
+                # vMix explains the error in the body ("Invalid input name…"):
+                # it goes to the logs or the Open Log button adds nothing
                 logger.warning(
                     "vMix ha risposto HTTP %s a %s: %s",
                     response.status_code,

@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Service layer between the GUI and the pipeline.
 
 The GUI depends only on the AppServices interface. Milestone 2 wires
@@ -50,15 +50,15 @@ class AppServices(abc.ABC):
         self._config: AppConfig | None = None
 
     def update_config(self, config: AppConfig) -> None:
-        """Configurazione corrente: la GUI la aggiorna a ogni modifica."""
+        """Current configuration: the GUI updates it on every change."""
         self._config = config
 
     def set_subtitle_listener(self, callback: SubtitleCallback | None) -> None:
         self._subtitle_listener = callback
 
     def set_error_listener(self, callback: SubtitleCallback | None) -> None:
-        """Errori del pipeline durante la traduzione (es. vMix giù, provider
-        disconnesso). Può arrivare da thread di lavoro: marshalare sul thread Qt."""
+        """Pipeline errors during translation (e.g. vMix down, provider
+        disconnected). May arrive from worker threads: marshal onto the Qt thread."""
         self._error_listener = callback
 
     def _emit_subtitle(self, text: str) -> None:
@@ -76,10 +76,10 @@ class AppServices(abc.ABC):
     def start_audio_monitor(
         self, device_id: int | str | None, on_level: LevelCallback
     ) -> ServiceResult:
-        """Avvia l'ascolto per il Test Audio; on_level riceve livelli 0.0–1.0.
+        """Start listening for the Audio Test; on_level receives levels 0.0–1.0.
 
-        on_level può arrivare da un thread audio: i consumatori GUI devono
-        rimandarlo sul thread Qt (signal emit).
+        on_level may arrive from an audio thread: GUI consumers must marshal it
+        back onto the Qt thread (signal emit).
         """
 
     @abc.abstractmethod
@@ -153,10 +153,10 @@ class MockAppServices(AppServices):
 
 
 class LiveAppServices(MockAppServices):
-    """Servizi progressivamente reali: audio (M3) e vMix (M4) veri, provider
-    di traduzione ancora mock fino alla Milestone 7.
+    """Progressively real services: real audio (M3) and vMix (M4), translation
+    provider still mocked until Milestone 7.
 
-    La GUI non cambia perché dipende solo dall'interfaccia AppServices.
+    The GUI does not change because it depends only on the AppServices interface.
     """
 
     def __init__(self, audio_input: AudioInput, secret_store: SecretStore | None = None) -> None:
@@ -167,9 +167,9 @@ class LiveAppServices(MockAppServices):
         self._vmix: VmixOutput | None = None
 
     def _make_provider(self):
-        """Provider di traduzione in uso, scelto dal registro in base a
-        config.provider. Se il provider richiede una chiave API ma non ce n'è
-        una salvata, si ricade sulla demo (finto) così la GUI resta usabile."""
+        """Translation provider in use, chosen from the registry based on
+        config.provider. If the provider requires an API key but none is
+        saved, fall back to the demo (fake) so the GUI stays usable."""
         from app.providers.registry import (
             DEFAULT_PROVIDER_ID,
             create_provider,
@@ -183,7 +183,7 @@ class LiveAppServices(MockAppServices):
             return create_provider("fake", self._secret_store)
         missing = [name for name in info.required_key_names if not self._has_key(name)]
         if missing:
-            # logga solo i NOMI degli account mancanti, mai i valori
+            # log only the NAMES of the missing accounts, never the values
             logger.info(
                 "Chiavi mancanti per '%s' (%s): uso il provider demo",
                 provider_id,
@@ -249,8 +249,8 @@ class LiveAppServices(MockAppServices):
             input=vmix_config.input,
             selected_name=vmix_config.selected_name,
         )
-        # notifica l'errore vMix una sola volta finché persiste, per non
-        # inondare l'operatore a ogni sottotitolo
+        # notify the vMix error only once while it persists, so as not to
+        # flood the operator on every subtitle
         vmix_error_shown = {"flag": False}
 
         def publish_to_vmix(text: str) -> None:
@@ -289,7 +289,7 @@ class LiveAppServices(MockAppServices):
             self._pipeline = None
         if self._vmix is not None:
             try:
-                self._vmix.clear_text()  # svuota il titolo a fine diretta
+                self._vmix.clear_text()  # clear the title at the end of the live show
             except VmixError:
                 pass
             self._vmix.close()
@@ -310,8 +310,8 @@ class LiveAppServices(MockAppServices):
         try:
             version = vmix.test_connection()
             if not vmix_config.input:
-                # niente riferimento alle "Impostazioni": durante il wizard
-                # il campo Input/Titolo è nella pagina precedente
+                # no reference to "Settings": during the wizard
+                # the Input/Title field is on the previous page
                 return ServiceResult(
                     False,
                     "vMix raggiungibile, ma manca il nome del titolo: "
@@ -325,7 +325,7 @@ class LiveAppServices(MockAppServices):
         except VmixError as exc:
             return ServiceResult(False, str(exc))
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
-            # es. porta incollata dentro al campo Host → URL non valido
+            # e.g. port pasted into the Host field → invalid URL
             logger.warning("Indirizzo vMix non valido: %s", type(exc).__name__)
             return ServiceResult(
                 False,
@@ -339,8 +339,8 @@ class LiveAppServices(MockAppServices):
         try:
             return self._audio.list_devices()
         except AudioInputError as exc:
-            # la tendina resterà con il solo "Predefinito di sistema": almeno
-            # il log spiega perché (principio: errori mai invisibili)
+            # the dropdown will keep only "System default": at least
+            # the log explains why (principle: errors are never invisible)
             logger.warning("Lettura dispositivi audio fallita: %s", exc)
             return []
 

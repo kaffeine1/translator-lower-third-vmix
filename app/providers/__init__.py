@@ -1,3 +1,3 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Translation providers. All provider-specific code lives here, never in the GUI."""

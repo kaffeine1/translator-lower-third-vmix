@@ -1,15 +1,15 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""AzureSpeechProvider — riconoscimento vocale cloud Microsoft (v1.2).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""AzureSpeechProvider — Microsoft cloud speech recognition (v1.2).
 
-È uno SpeechProvider: audio → testo sorgente (parziale/finale). Va combinato con
-un TranslationProvider (es. DeepL) dentro un ComposedRealtimeProvider.
+It is a SpeechProvider: audio → source text (partial/final). It must be combined
+with a TranslationProvider (e.g. DeepL) inside a ComposedRealtimeProvider.
 
-Tutta la logica specifica di Azure vive qui. La chiave (e la regione) sono lette
-da secure storage e non compaiono mai nei log. Il "motore" di riconoscimento è
-iniettabile: i test usano un motore finto, senza SDK né rete. Il motore reale
-richiede il pacchetto opzionale ``azure-cognitiveservices-speech`` (vedi
-requirements-optional.txt), non incluso nel pacchetto base.
+All Azure-specific logic lives here. The key (and the region) are read from
+secure storage and never appear in the logs. The recognition "engine" is
+injectable: tests use a fake engine, with no SDK or network. The real engine
+requires the optional package ``azure-cognitiveservices-speech`` (see
+requirements-optional.txt), not included in the base package.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from app.providers.base import ProviderConfig, SpeechProvider
 
 logger = logging.getLogger("app.providers.azure")
 
-# codici lingua Azure (BCP-47)
+# Azure language codes (BCP-47)
 _BCP47 = {
     "es": "es-ES",
     "it": "it-IT",
@@ -41,11 +41,11 @@ def _lang(code: str) -> str:
 
 
 class AzureSpeechError(Exception):
-    """Errore Azure Speech con messaggio leggibile dall'operatore (italiano)."""
+    """Azure Speech error with an operator-readable message (Italian)."""
 
 
 TextCb = Callable[[str], None]
-# firma del motore: factory(**opts) -> oggetto con start()/push(bytes)/stop()
+# engine signature: factory(**opts) -> object with start()/push(bytes)/stop()
 EngineFactory = Callable[..., "object"]
 
 
@@ -113,8 +113,8 @@ def _make_real_engine(**kwargs) -> object:
 
 
 class _AzureEngine:
-    """Adattatore sul SDK Azure. Le callback SDK arrivano su thread propri: il
-    ComposedRealtimeProvider le rimanda al loop asyncio in modo thread-safe."""
+    """Adapter over the Azure SDK. SDK callbacks arrive on their own threads: the
+    ComposedRealtimeProvider forwards them to the asyncio loop in a thread-safe way."""
 
     def __init__(
         self,

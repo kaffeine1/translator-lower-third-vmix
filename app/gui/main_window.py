@@ -1,10 +1,10 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Finestra principale.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Main window.
 
-Semafori Audio/API/vMix, anteprima sottotitolo, START/STOP e pulsanti di test.
-Orchestra il pipeline tramite AppServices ma non contiene logica di business:
-provider, audio e vMix restano nei rispettivi moduli.
+Audio/API/vMix status lights, subtitle preview, START/STOP and test buttons.
+Orchestrates the pipeline through AppServices but contains no business logic:
+provider, audio and vMix stay in their respective modules.
 """
 
 from __future__ import annotations
@@ -48,15 +48,15 @@ AUDIO_DETECTED_THRESHOLD = 0.02
 
 
 class MainWindow(QMainWindow):
-    # I provider reali emettono testo da thread di lavoro: il listener emette
-    # questo segnale, Qt lo consegna sul thread GUI.
+    # Real providers emit text from worker threads: the listener emits this
+    # signal, and Qt delivers it on the GUI thread.
     subtitle_received = Signal(str)
-    # Idem per i livelli audio, che arrivano dal thread PortAudio.
+    # Same for audio levels, which arrive from the PortAudio thread.
     audio_level = Signal(float)
-    # Errori del pipeline durante la traduzione (thread di lavoro).
+    # Pipeline errors during translation (worker thread).
     translation_error = Signal(str)
-    # Esiti delle chiamate servizi eseguite su thread di lavoro (HTTP ecc.):
-    # (risultato, callback di completamento da eseguire sul thread GUI).
+    # Results of service calls run on worker threads (HTTP etc.):
+    # (result, completion callback to run on the GUI thread).
     _service_done = Signal(object, object)
 
     def __init__(
@@ -187,7 +187,7 @@ class MainWindow(QMainWindow):
             self.btn_stop.setEnabled(False)
 
     def _on_translation_error(self, message: str) -> None:
-        # errore in diretta: visibile ma non modale (non interrompe l'evento)
+        # live error: visible but not modal (does not interrupt the event)
         self.vmix_light.set_state(StatusState.RED)
         self.statusBar().showMessage(message, 8000)
         logger.warning("Errore traduzione: %s", message)
@@ -197,8 +197,8 @@ class MainWindow(QMainWindow):
             self._finish_audio_test()
             return
         device_id = self._config.audio.device_id
-        # picco e flag vanno impostati PRIMA dello start: i livelli possono
-        # arrivare già durante la chiamata (il mock li emette in modo sincrono)
+        # peak and flag must be set BEFORE start: levels can already
+        # arrive during the call (the mock emits them synchronously)
         self._audio_peak = 0.0
         self._audio_monitoring = True
         result = self._call_service(
@@ -212,8 +212,8 @@ class MainWindow(QMainWindow):
         self._audio_test_timer.start()
 
     def _on_audio_level(self, level: float) -> None:
-        # i livelli arrivano in coda dal thread audio: quelli già in volo
-        # quando il test finisce non devono riaccendere il meter
+        # levels arrive queued from the audio thread: those still in flight
+        # when the test ends must not light the meter back up
         if not self._audio_monitoring:
             return
         self.level_meter.set_level(level)
@@ -267,7 +267,7 @@ class MainWindow(QMainWindow):
         self._apply_settings(dialog.result_config(), dialog.entered_api_key())
 
     def _apply_settings(self, new_config: AppConfig, api_key: str) -> bool:
-        """Persiste config e chiave API mostrando gli errori all'operatore."""
+        """Persists config and API key, showing errors to the operator."""
         try:
             self._manager.save(new_config)
         except OSError:
@@ -281,7 +281,7 @@ class MainWindow(QMainWindow):
             return False
         self._config = new_config
         self._services.update_config(new_config)
-        # config cambiata: gli esiti dei test precedenti non valgono più
+        # config changed: previous test results are no longer valid
         for light in (self.audio_light, self.api_light, self.vmix_light):
             light.set_state(StatusState.YELLOW)
         if api_key:
@@ -293,19 +293,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Impostazioni salvate", 5000)
         return True
 
-    def closeEvent(self, event) -> None:  # noqa: N802 (nome imposto da Qt)
+    def closeEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
         self._closing = True
         if self._audio_monitoring:
             self._finish_audio_test()
-        # traduzione in corso: fermala per non lasciare thread appesi
+        # translation running: stop it to avoid leaving dangling threads
         if self.btn_stop.isEnabled():
             try:
                 self._services.stop_translation()
             except Exception:
                 logger.exception("Errore fermando la traduzione alla chiusura")
-        # attesa breve dei thread di servizio in volo: il timeout httpx (2 s
-        # × 2 tentativi) limita l'attesa e si evita di emettere segnali
-        # durante lo smontaggio dell'interprete
+        # brief wait for in-flight service threads: the httpx timeout (2 s
+        # × 2 attempts) bounds the wait and avoids emitting signals
+        # during interpreter teardown
         for thread in self._service_threads:
             thread.join(timeout=5.0)
         super().closeEvent(event)
@@ -316,9 +316,9 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
 
     def diagnostics_text(self) -> str:
-        """Testo della schermata Info/About: autore, versione, percorsi.
+        """Text of the Info/About screen: author, version, paths.
 
-        Non contiene mai segreti (la chiave API è indicata solo come presente)."""
+        Never contains secrets (the API key is only reported as present)."""
         provider = self._config.provider
         has_key = self._has_saved_api_key()
         return (
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ helper
 
     def _call_service(self, operation) -> ServiceResult | None:
-        """Esegue un'operazione dei servizi mostrando l'esito all'operatore."""
+        """Runs a service operation, showing the outcome to the operator."""
         try:
             result = operation()
         except Exception:
@@ -356,8 +356,8 @@ class MainWindow(QMainWindow):
         return result
 
     def _call_service_async(self, operation, on_done) -> None:
-        """Come _call_service ma su thread di lavoro: le chiamate HTTP non
-        devono mai congelare la GUI. on_done(result|None) arriva sul thread Qt."""
+        """Like _call_service but on a worker thread: HTTP calls must never
+        freeze the GUI. on_done(result|None) arrives on the Qt thread."""
 
         def runner() -> None:
             try:
@@ -367,8 +367,8 @@ class MainWindow(QMainWindow):
                     "Errore inatteso in %s", getattr(operation, "__name__", "servizio")
                 )
                 result = None
-            # dopo closeEvent non si emette più: il segnale arriverebbe
-            # durante lo smontaggio di Qt/interprete
+            # after closeEvent we no longer emit: the signal would arrive
+            # during Qt/interpreter teardown
             if not self._closing:
                 self._service_done.emit(result, on_done)
 

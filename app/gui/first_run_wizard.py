@@ -1,11 +1,11 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Wizard prima esecuzione.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""First-run wizard.
 
-Passi: ingresso audio → API key → test API → vMix → test vMix → salva e avvia.
-Come il dialogo impostazioni, il wizard non persiste nulla: il chiamante salva
-result_config() e entered_api_key(). I test (API/vMix) girano su thread di
-lavoro: le chiamate HTTP non devono mai congelare il wizard.
+Steps: audio input → API key → API test → vMix → vMix test → save and start.
+Like the settings dialog, the wizard persists nothing: the caller saves
+result_config() and entered_api_key(). The tests (API/vMix) run on worker
+threads: HTTP calls must never freeze the wizard.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ logger = logging.getLogger("app.gui")
 
 
 class FirstRunWizard(QWizard):
-    # (risultato, (pulsante, etichetta esito)) marshalati sul thread GUI
+    # (result, (button, result label)) marshalled onto the GUI thread
     _test_done = Signal(object, object)
 
     def __init__(
@@ -48,7 +48,7 @@ class FirstRunWizard(QWizard):
         super().__init__(parent)
         self.setWindowTitle("Prima configurazione")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
-        # Qt non traduce da solo i pulsanti di navigazione: testi in italiano
+        # Qt does not translate the navigation buttons on its own: Italian texts
         self.setButtonText(QWizard.WizardButton.BackButton, "< Indietro")
         self.setButtonText(QWizard.WizardButton.NextButton, "Avanti >")
         self.setButtonText(QWizard.WizardButton.FinishButton, "Fine")
@@ -57,7 +57,7 @@ class FirstRunWizard(QWizard):
         self._services = services
         self._test_done.connect(self._on_test_done)
 
-        # 1. Ingresso audio
+        # 1. Audio input
         audio_page = QWizardPage()
         audio_page.setTitle("1. Scegli l'ingresso audio")
         audio_form = QFormLayout(audio_page)
@@ -108,8 +108,8 @@ class FirstRunWizard(QWizard):
         vmix_form.addRow("Campo testo:", self.field_edit)
         self.addPage(vmix_page)
 
-        # 5. Test vMix — usa i valori appena digitati nel wizard, non la
-        # config salvata (che a questo punto non esiste ancora)
+        # 5. vMix test — uses the values just typed in the wizard, not the
+        # saved config (which does not exist yet at this point)
         page, self.vmix_test_button, self.vmix_test_label = self._make_test_page(
             "5. Verifica vMix",
             "Premi il pulsante per inviare una frase di prova al titolo configurato.",
@@ -118,7 +118,7 @@ class FirstRunWizard(QWizard):
         )
         self.addPage(page)
 
-        # 6. Fine
+        # 6. Finish
         final_page = QWizardPage()
         final_page.setTitle("6. Salva e avvia")
         final_layout = QVBoxLayout(final_page)
@@ -173,7 +173,7 @@ class FirstRunWizard(QWizard):
         self._services.update_config(self.result_config())
         return self._services.test_vmix()
 
-    # ------------------------------------------------------------------ dati
+    # ------------------------------------------------------------------ data
 
     def result_config(self) -> AppConfig:
         config = AppConfig.from_dict(self._base_config.to_dict())

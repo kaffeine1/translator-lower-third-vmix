@@ -1,15 +1,15 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""DeepLTranslationProvider — traduzione testo via API REST DeepL (v1.2).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""DeepLTranslationProvider — text translation via the DeepL REST API (v1.2).
 
-È un TranslationProvider: traduce testo sorgente → destinazione. Va usato dentro
-un ComposedRealtimeProvider insieme a uno SpeechProvider (audio → testo). Da
-solo non produce sottotitoli: serve una sorgente di testo (v1.2 successivo:
+It is a TranslationProvider: it translates source text → target. It must be used
+inside a ComposedRealtimeProvider together with a SpeechProvider (audio → text).
+On its own it does not produce subtitles: it needs a text source (later in v1.2:
 Google/Azure Speech).
 
-Sicurezza: la chiave DeepL è letta da secure storage (provider name "deepl") e
-non compare mai nei log. Il client HTTP è iniettabile per i test (nessuna
-chiamata reale di default).
+Security: the DeepL key is read from secure storage (provider name "deepl") and
+never appears in the logs. The HTTP client is injectable for tests (no real
+call by default).
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ DEFAULT_TIMEOUT_S = 5.0
 
 
 class DeepLError(Exception):
-    """Errore DeepL con messaggio leggibile dall'operatore (italiano)."""
+    """DeepL error with an operator-readable message (Italian)."""
 
 
 def _lang(code: str) -> str:
-    # DeepL usa codici lingua maiuscoli (ES, IT, EN…)
+    # DeepL uses uppercase language codes (ES, IT, EN…)
     return (code or "").upper()
 
 
@@ -53,7 +53,7 @@ class DeepLTranslationProvider(TranslationProvider):
 
     @staticmethod
     def base_url_for_key(key: str) -> str:
-        # le chiavi del piano gratuito terminano con ":fx"
+        # free-plan keys end with ":fx"
         return "https://api-free.deepl.com" if key.endswith(":fx") else "https://api.deepl.com"
 
     async def connect(self, config: ProviderConfig) -> None:

@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Genera assets/icon.ico usando PySide6 (nessuna dipendenza esterna).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Generate assets/icon.ico using PySide6 (no external dependencies).
 
-Icona semplice: sfondo scuro arrotondato (come un lower third) con due barre di
-sottotitolo (bianca + verde). Rigenerabile con:
+Simple icon: rounded dark background (like a lower third) with two subtitle
+bars (white + green). Can be regenerated with:
 
     python scripts/make_icon.py
 """
@@ -30,12 +30,12 @@ def render(size: int) -> QImage:
     painter = QPainter(image)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    # sfondo arrotondato scuro
+    # rounded dark background
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QBrush(QColor("#222831")))
     painter.drawRoundedRect(QRectF(8, 8, size - 16, size - 16), 36, 36)
 
-    # barra sottotitolo bianca (riga 1) e verde (riga 2)
+    # white subtitle bar (line 1) and green (line 2)
     margin = size * 0.18
     bar_h = size * 0.13
     width = size - 2 * margin

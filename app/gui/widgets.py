@@ -1,6 +1,6 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Widget riusabili: semaforo di stato, misuratore livello audio, anteprima sottotitolo."""
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Reusable widgets: status light, audio level meter, subtitle preview."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ _STATE_TOOLTIPS = {
 
 
 class StatusLight(QLabel):
-    """Cerchio colorato rosso/giallo/verde. Parte giallo (non verificato)."""
+    """Colored red/yellow/green circle. Starts yellow (not verified)."""
 
     DIAMETER = 18
 
@@ -55,7 +55,7 @@ class StatusLight(QLabel):
 
 
 class AudioLevelMeter(QProgressBar):
-    """Barra di livello audio per il pulsante Test Audio."""
+    """Audio level bar for the Test Audio button."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -65,12 +65,12 @@ class AudioLevelMeter(QProgressBar):
         self.setFixedHeight(14)
 
     def set_level(self, level: float) -> None:
-        """level nell'intervallo 0.0–1.0."""
+        """level in the 0.0–1.0 range."""
         self.setValue(max(0, min(100, round(level * 100))))
 
 
 class SubtitlePreview(QFrame):
-    """Anteprima dell'ultimo sottotitolo tradotto, su sfondo scuro tipo lower third."""
+    """Preview of the last translated subtitle, on a dark lower-third-style background."""
 
     PLACEHOLDER = "— nessun sottotitolo —"
 

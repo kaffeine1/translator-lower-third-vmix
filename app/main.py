@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Application entry point: config + logging bootstrap, then the PySide6 GUI.
 
-Milestone 2: i pulsanti sono collegati a MockAppServices (nessuna chiamata
-reale ad audio, provider o vMix).
+Milestone 2: the buttons are wired to MockAppServices (no real calls to
+audio, provider or vMix).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from app.services import LiveAppServices
 
 
 def _icon_path() -> Path | None:
-    """Percorso di assets/icon.ico, sia in sviluppo sia nel pacchetto PyInstaller."""
+    """Path to assets/icon.ico, both in development and in the PyInstaller bundle."""
     base = getattr(sys, "_MEIPASS", None)
     if base:
         candidate = Path(base) / "assets" / "icon.ico"
@@ -53,8 +53,8 @@ def main() -> int:
     if icon_path is not None:
         app.setWindowIcon(QIcon(str(icon_path)))
 
-    # Audio (M3), vMix (M4) e provider OpenAI (M7) reali; senza chiave salvata
-    # il provider ricade sulla demo finta
+    # Real audio (M3), vMix (M4) and OpenAI provider (M7); without a saved key
+    # the provider falls back to the fake demo
     secret_store = KeyringSecretStore()
     services = LiveAppServices(SoundDeviceAudioInput(), secret_store)
 
@@ -78,7 +78,7 @@ def main() -> int:
                     secret_store.set_api_key(config.provider, key)
                 except SecretStorageError as exc:
                     QMessageBox.warning(None, APP_DISPLAY_NAME, str(exc))
-        # wizard annullato: nessun salvataggio, così ricompare al prossimo avvio
+        # wizard cancelled: nothing saved, so it reappears on the next launch
 
     window = MainWindow(manager, config, services, secret_store)
     window.show()

@@ -1,11 +1,11 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""FakeTranslationProvider — provider di sviluppo/demo, nessun uso di API a pagamento.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""FakeTranslationProvider — development/demo provider, no paid API usage.
 
-Emette una sequenza scriptata di testi parziali/finali (già "tradotti" in
-italiano) su una timeline asincrona, così l'intera pipeline
-provider → formatter → vMix può essere provata senza microfono né OpenAI.
-Può anche simulare un errore di connessione per testare la gestione errori.
+Emits a scripted sequence of partial/final texts (already "translated" into
+Italian) on an asynchronous timeline, so the whole
+provider → formatter → vMix pipeline can be exercised without a microphone or
+OpenAI. It can also simulate a connection error to test error handling.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from app.providers.base import ProviderConfig, RealtimeTranslationProvider
 
 logger = logging.getLogger("app.providers.fake")
 
-# (kind, text): la demo simula il parlato spagnolo già tradotto in italiano
+# (kind, text): the demo simulates Spanish speech already translated into Italian
 DEMO_SCRIPT: list[tuple[str, str]] = [
     ("partial", "Benvenuti"),
     ("partial", "Benvenuti a questo"),
@@ -31,13 +31,13 @@ DEMO_SCRIPT: list[tuple[str, str]] = [
 
 
 class FakeTranslationProvider(RealtimeTranslationProvider):
-    """Emette eventi di testo scriptati senza alcun accesso di rete.
+    """Emits scripted text events without any network access.
 
-    Parametri:
-    - script: sequenza (kind, text); default DEMO_SCRIPT.
-    - step_delay: secondi tra un evento e il successivo.
-    - fail_at_index: se impostato, emette on_error a quell'indice e si ferma.
-    - loop: se True, ricomincia lo script da capo (demo continua).
+    Parameters:
+    - script: (kind, text) sequence; defaults to DEMO_SCRIPT.
+    - step_delay: seconds between one event and the next.
+    - fail_at_index: if set, emits on_error at that index and stops.
+    - loop: if True, restarts the script from the beginning (continuous demo).
     """
 
     def __init__(
@@ -79,12 +79,12 @@ class FakeTranslationProvider(RealtimeTranslationProvider):
                     return
         except asyncio.CancelledError:
             raise
-        except Exception:  # un provider non deve mai far cadere il loop
+        except Exception:  # a provider must never let the loop crash
             logger.exception("Errore nel FakeTranslationProvider")
             self._emit_error("Errore interno del provider di traduzione")
 
     async def send_audio(self, chunk: bytes) -> None:
-        # il provider finto ignora l'audio: emette testo su timeline propria
+        # the fake provider ignores audio: it emits text on its own timeline
         return None
 
     async def close(self) -> None:

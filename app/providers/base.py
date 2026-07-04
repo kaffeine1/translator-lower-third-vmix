@@ -1,5 +1,5 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Provider interfaces.
 
 v1 uses a combined realtime provider (audio in → translated text out).
@@ -37,12 +37,12 @@ class ProviderConfig:
 
 
 class TextEventEmitter:
-    """Registrazione ed emissione di eventi testo (parziale/finale/errore).
+    """Registration and emission of text events (partial/final/error).
 
-    Condiviso da RealtimeTranslationProvider e SpeechProvider: la semantica del
-    testo (già tradotto vs lingua sorgente) dipende dalla sottoclasse. I
-    callback sono invocati dal thread/loop di I/O del provider: i consumatori
-    devono marshalarli sul proprio thread.
+    Shared by RealtimeTranslationProvider and SpeechProvider: the semantics of
+    the text (already translated vs source language) depend on the subclass. The
+    callbacks are invoked from the provider's I/O thread/loop: consumers must
+    marshal them onto their own thread.
     """
 
     def __init__(self) -> None:
@@ -87,7 +87,7 @@ class RealtimeTranslationProvider(TextEventEmitter, abc.ABC):
 
 class SpeechProvider(TextEventEmitter, abc.ABC):
     """Streams audio chunks and emits SOURCE-language text events
-    (partial/final). Non traduce: la traduzione è compito del
+    (partial/final). Does not translate: translation is the job of the
     TranslationProvider."""
 
     @abc.abstractmethod
@@ -101,10 +101,10 @@ class SpeechProvider(TextEventEmitter, abc.ABC):
 
 
 class TranslationProvider(abc.ABC):
-    """Traduce testo dalla lingua sorgente a quella di destinazione.
+    """Translates text from the source language to the target language.
 
-    connect()/close() hanno default vuoti: un traduttore stateless (es. una
-    chiamata REST per frase) non deve implementarli.
+    connect()/close() have empty defaults: a stateless translator (e.g. a
+    REST call per sentence) need not implement them.
     """
 
     async def connect(self, config: ProviderConfig) -> None:

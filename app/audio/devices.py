@@ -1,10 +1,10 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Modello dispositivo audio ed enumerazione degli ingressi Windows.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Audio device model and enumeration of Windows inputs.
 
-Gli indici PortAudio cambiano a ogni collega/scollega di dispositivi: in
-config si persiste il NOME normalizzato (AudioDevice.id), che viene risolto
-nell'indice corrente solo al momento dell'avvio della cattura.
+PortAudio indices change every time a device is plugged/unplugged: the config
+persists the normalized NAME (AudioDevice.id), which is resolved to the current
+index only when capture starts.
 """
 
 from __future__ import annotations
@@ -13,28 +13,28 @@ from dataclasses import dataclass
 
 
 class AudioInputError(Exception):
-    """Errore audio con messaggio leggibile dall'operatore (in italiano)."""
+    """Audio error with an operator-readable message (in Italian)."""
 
 
 @dataclass
 class AudioDevice:
     id: int | str
-    """Identificatore stabile da persistere in config (nome normalizzato)."""
+    """Stable identifier to persist in config (normalized name)."""
     name: str
     channels: int
     default: bool = False
     index: int | None = None
-    """Indice PortAudio corrente: volatile, mai da salvare."""
+    """Current PortAudio index: volatile, never to be saved."""
 
 
 def list_input_devices() -> list[AudioDevice]:
-    """Elenca gli ingressi audio visibili a Windows.
+    """List the audio inputs visible to Windows.
 
-    Windows espone lo stesso dispositivo fisico su più host API (MME,
-    DirectSound, WASAPI…): per non confondere l'operatore si filtra sull'host
-    API del dispositivo di ingresso predefinito. sounddevice è importato nel
-    try: il caricamento della DLL PortAudio può fallire (build incomplete,
-    DLL bloccata) e deve diventare un errore leggibile, non un crash.
+    Windows exposes the same physical device on multiple host APIs (MME,
+    DirectSound, WASAPI…): to avoid confusing the operator, we filter on the
+    host API of the default input device. sounddevice is imported inside the
+    try: loading the PortAudio DLL can fail (incomplete build, blocked DLL)
+    and must become a readable error, not a crash.
     """
     try:
         import sounddevice as sd
@@ -52,7 +52,7 @@ def list_input_devices() -> list[AudioDevice]:
         default_index = default_info["index"]
         default_hostapi = default_info["hostapi"]
     except Exception:
-        pass  # nessun ingresso predefinito: elenca tutti gli ingressi
+        pass  # no default input: list all inputs
 
     result: list[AudioDevice] = []
     for info in devices:
@@ -60,8 +60,8 @@ def list_input_devices() -> list[AudioDevice]:
             continue
         if default_hostapi is not None and info["hostapi"] != default_hostapi:
             continue
-        # i driver (specie Bluetooth) riportano nomi con newline e stringhe
-        # di sistema: normalizza gli spazi per tendina e persistenza
+        # drivers (especially Bluetooth) report names with newlines and system
+        # strings: normalize whitespace for the dropdown and persistence
         name = " ".join(info["name"].split())
         result.append(
             AudioDevice(
@@ -76,12 +76,11 @@ def list_input_devices() -> list[AudioDevice]:
 
 
 def resolve_device_index(device_id: int | str | None) -> int | None:
-    """Converte il device_id salvato nell'indice PortAudio di questa sessione.
+    """Convert the saved device_id to this session's PortAudio index.
 
-    None = ingresso predefinito di sistema. Gli int passano invariati
-    (config modificate a mano o mock). I nomi vengono cercati tra gli
-    ingressi correnti; se il dispositivo non c'è più l'errore spiega
-    all'operatore cosa fare.
+    None = system default input. Ints pass through unchanged (hand-edited
+    config or mocks). Names are looked up among the current inputs; if the
+    device is gone, the error explains to the operator what to do.
     """
     if device_id is None:
         return None

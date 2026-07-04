@@ -1,6 +1,6 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Provider registry tests (v1.1) — selezione provider senza rete."""
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Provider registry tests (v1.1) — provider selection without network."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _services(provider_id: str, with_key: bool):
 
 
 def test_make_provider_demo_selected_even_with_key():
-    # scegliere esplicitamente la demo deve valere anche se c'è una chiave
+    # explicitly choosing the demo must hold even if there is a key
     services = _services("fake", with_key=True)
     assert isinstance(services._make_provider(), FakeTranslationProvider)
 

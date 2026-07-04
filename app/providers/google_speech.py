@@ -1,14 +1,14 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""GoogleSpeechProvider — riconoscimento vocale cloud Google (v1.2).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""GoogleSpeechProvider — Google cloud speech recognition (v1.2).
 
-SpeechProvider: audio → testo sorgente (parziale/finale), da combinare con un
-TranslationProvider (es. DeepL) dentro un ComposedRealtimeProvider.
+SpeechProvider: audio → source text (partial/final), to be combined with a
+TranslationProvider (e.g. DeepL) inside a ComposedRealtimeProvider.
 
-Logica Google isolata qui. Le credenziali (percorso del file JSON del service
-account) sono lette da secure storage e non compaiono nei log. Il motore di
-streaming è iniettabile: i test usano un motore finto senza SDK né rete. Il
-motore reale richiede il pacchetto opzionale ``google-cloud-speech`` (vedi
+Google logic isolated here. The credentials (path to the service account JSON
+file) are read from secure storage and do not appear in the logs. The streaming
+engine is injectable: tests use a fake engine with no SDK or network. The
+real engine requires the optional package ``google-cloud-speech`` (see
 requirements-optional.txt).
 """
 
@@ -42,7 +42,7 @@ def _lang(code: str) -> str:
 
 
 class GoogleSpeechError(Exception):
-    """Errore Google Speech con messaggio leggibile dall'operatore (italiano)."""
+    """Google Speech error with an operator-readable message (Italian)."""
 
 
 TextCb = Callable[[str], None]
@@ -63,7 +63,7 @@ class GoogleSpeechProvider(SpeechProvider):
         self._engine: object | None = None
 
     async def connect(self, config: ProviderConfig) -> None:
-        # "google" custodisce il percorso del file credenziali (service account)
+        # "google" holds the path to the credentials file (service account)
         credentials = (
             self._secret_store.get_api_key(self._provider_name)
             if self._secret_store
@@ -109,10 +109,10 @@ def _make_real_engine(**kwargs) -> object:
 
 
 class _GoogleEngine:
-    """Adattatore sul client di streaming di Google. L'audio spinto con push()
-    alimenta un generatore di richieste letto in un thread dedicato; le risposte
-    diventano eventi parziale/finale. Le callback arrivano dal thread di lettura:
-    il ComposedRealtimeProvider le rimanda al loop asyncio in modo thread-safe."""
+    """Adapter over Google's streaming client. Audio pushed with push()
+    feeds a request generator read in a dedicated thread; the responses
+    become partial/final events. The callbacks arrive from the reader thread:
+    the ComposedRealtimeProvider forwards them to the asyncio loop in a thread-safe way."""
 
     def __init__(
         self,
@@ -152,16 +152,16 @@ class _GoogleEngine:
             self._queue.put(chunk)
 
     def stop(self) -> None:
-        # NON fare join qui: close() è atteso sul thread del loop asyncio e un
-        # join bloccante lo congelerebbe. Il sentinel chiude il generatore di
-        # richieste (quindi lo stream), il thread daemon termina da solo e la
-        # guardia _closed impedisce emissioni tardive.
+        # Do NOT join here: close() is awaited on the asyncio loop thread and a
+        # blocking join would freeze it. The sentinel closes the request
+        # generator (and therefore the stream), the daemon thread terminates on
+        # its own, and the _closed guard prevents late emissions.
         self._closed = True
-        self._queue.put(None)  # sblocca il generatore di richieste
+        self._queue.put(None)  # unblocks the request generator
 
     def _requests(self):
-        # protocollo streaming v2: la PRIMA richiesta porta lo streaming_config,
-        # le successive l'audio
+        # streaming protocol v2: the FIRST request carries the streaming_config,
+        # the subsequent ones the audio
         yield self._speech.StreamingRecognizeRequest(streaming_config=self._config)
         while True:
             chunk = self._queue.get()

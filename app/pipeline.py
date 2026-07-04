@@ -1,19 +1,19 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""TranslationPipeline — collega provider → formatter → uscite.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""TranslationPipeline — connects provider → formatter → outputs.
 
-Ciclo di vita gestito qui, fuori dalla GUI:
-- un thread con event loop asyncio ospita il provider (connect/send_audio/close);
-- gli eventi di testo del provider (thread del loop) alimentano il
+Lifecycle managed here, outside the GUI:
+- a thread with an asyncio event loop hosts the provider (connect/send_audio/close);
+- the provider's text events (loop thread) feed the
   SubtitleFormatter;
-- un thread "tick" chiama formatter.tick() ~ogni 250 ms (parziali stabili,
-  pulizia dopo silenzio);
-- il callback publish del formatter è velocissimo: accoda il testo. Un thread
-  "output" consuma la coda e lo invia all'uscita (vMix), che può bloccare.
+- a "tick" thread calls formatter.tick() ~every 250 ms (stable partials,
+  clear after silence);
+- the formatter's publish callback is very fast: it enqueues the text. An
+  "output" thread consumes the queue and sends it to the output (vMix), which may block.
 
-STOP ferma e unisce tutti i thread: nessun thread appeso. L'audio è opzionale:
-se la cattura fallisce, la pipeline continua (utile per la demo del provider
-finto senza microfono).
+STOP stops and joins all threads: no hanging threads. Audio is optional:
+if capture fails, the pipeline continues (useful for the fake provider demo
+without a microphone).
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ class TranslationPipeline:
                 on_chunk=self._forward_audio,
             )
         except Exception as exc:
-            # la demo del provider finto non ha bisogno dell'audio: si prosegue
+            # the fake provider demo does not need audio: carry on
             logger.warning("Cattura audio non avviata: %s", type(exc).__name__)
 
     def _forward_audio(self, chunk: bytes) -> None:
@@ -172,7 +172,7 @@ class TranslationPipeline:
         try:
             self._loop.run_forever()
         finally:
-            # completa i task residui (es. cancellazioni) prima di chiudere
+            # finish the remaining tasks (e.g. cancellations) before closing
             pending = asyncio.all_tasks(self._loop)
             for task in pending:
                 task.cancel()
@@ -201,7 +201,7 @@ class TranslationPipeline:
     # ------------------------------------------------------------------ sink
 
     def _on_formatter_publish(self, text: str) -> None:
-        # invocato dal thread provider (finale) o tick (parziale): solo accoda
+        # invoked from the provider thread (final) or tick (partial): only enqueue
         self._output_queue.put(text)
         self._on_subtitle(text)
 

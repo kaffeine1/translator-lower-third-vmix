@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Audio tests (Milestone 3): mock device list, fake chunks, lifecycle, levels.
 
-Nessun test tocca hardware reale: sounddevice viene sostituito con un modulo
-finto in sys.modules (l'import nei moduli audio è lazy proprio per questo).
+No test touches real hardware: sounddevice is replaced with a fake module
+in sys.modules (the import in the audio modules is lazy precisely for this).
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def test_start_stop_lifecycle():
     }
     audio.stop()
     assert not audio.is_running()
-    audio.feed(b"\x00\x00")  # dopo stop non deve arrivare nulla né esplodere
+    audio.feed(b"\x00\x00")  # after stop nothing should arrive nor blow up
 
 
 # ---------------------------------------------------------------- levels
@@ -90,7 +90,7 @@ def test_peak_level():
 
 
 class _FakeRawStream:
-    """Sostituto di sd.RawInputStream che registra il ciclo di vita."""
+    """Stand-in for sd.RawInputStream that records the life cycle."""
 
     instances: list[_FakeRawStream] = []
 
@@ -141,7 +141,7 @@ _DEVICES = [
 def test_list_input_devices_filters_outputs_and_hostapi(monkeypatch):
     _install_fake_sounddevice(monkeypatch, _DEVICES, default_input=0)
     devices = list_input_devices()
-    # id stabile = nome; l'indice PortAudio volatile resta disponibile a parte
+    # stable id = name; the volatile PortAudio index stays available separately
     assert [device.id for device in devices] == ["Microfono WASAPI", "Mixer WASAPI"]
     assert [device.index for device in devices] == [0, 2]
     assert devices[0].default is True
@@ -191,7 +191,7 @@ def test_resolve_none_is_system_default(monkeypatch):
 
 
 def test_resolve_int_passes_through():
-    # config modificate a mano o mock: nessuna enumerazione necessaria
+    # hand-edited config or mock: no enumeration needed
     assert resolve_device_index(7) == 7
 
 
@@ -219,11 +219,11 @@ def test_sounddevice_input_start_stop(monkeypatch):
     audio.start("Mixer WASAPI", 16000, 1, received.append)
     assert audio.is_running()
     stream = _FakeRawStream.instances[-1]
-    assert stream.kwargs["device"] == 2  # nome risolto nell'indice corrente
+    assert stream.kwargs["device"] == 2  # name resolved to the current index
     assert stream.kwargs["samplerate"] == 16000
     assert stream.kwargs["channels"] == 1
     assert stream.kwargs["dtype"] == "int16"
-    assert stream.kwargs["blocksize"] == 1600  # 100 ms a 16 kHz
+    assert stream.kwargs["blocksize"] == 1600  # 100 ms at 16 kHz
 
     stream.emit(b"\x01\x02" * 10)
     assert received == [b"\x01\x02" * 10]
@@ -231,7 +231,7 @@ def test_sounddevice_input_start_stop(monkeypatch):
     audio.stop()
     assert not audio.is_running()
     assert stream.closed is True
-    # dopo stop il callback non deve più inoltrare
+    # after stop the callback must no longer forward
     stream.emit(b"\x03\x04")
     assert len(received) == 1
 
@@ -250,8 +250,8 @@ def test_sounddevice_input_open_failure_raises_operator_error(monkeypatch):
 
 
 def test_sounddevice_input_start_failure_closes_opened_stream(monkeypatch):
-    # regressione: se open riesce ma start() fallisce, lo stream va chiuso o
-    # il dispositivo resta occupato fino alla chiusura dell'app
+    # regression: if open succeeds but start() fails, the stream must be closed or
+    # the device stays busy until the app is closed
     class StartFailsStream(_FakeRawStream):
         def start(self) -> None:
             raise RuntimeError("Pa_StartStream failed")
@@ -277,11 +277,11 @@ def test_live_services_level_plumbing():
 
     result = services.start_audio_monitor("Mic finto", levels.append)
     assert result.ok is True
-    audio.feed(_pcm16(*([16384, -16384] * 800)))  # segnale a metà scala
+    audio.feed(_pcm16(*([16384, -16384] * 800)))  # half-scale signal
     services.stop_audio_monitor()
 
     assert len(levels) == 1
-    assert 0.45 <= levels[0] <= 0.55  # rms_level applicato al chunk
+    assert 0.45 <= levels[0] <= 0.55  # rms_level applied to the chunk
     assert not audio.is_running()
 
 

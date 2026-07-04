@@ -1,21 +1,21 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""SubtitleFormatter — buffer anti-sfarfallio per il sottopancia live.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""SubtitleFormatter — anti-flicker buffer for the live lower third.
 
-Regole (da SubtitleConfig):
-- i FINALI si pubblicano subito;
-- i PARZIALI si pubblicano solo se stabili da min_update_interval_ms, oppure
-  — per non lasciare il sottopancia vuoto durante frasi lunghe — a cadenza
-  massima di un aggiornamento ogni min_update_interval_ms;
-- mai due pubblicazioni identiche consecutive;
-- il testo va a capo per parole su max_lines righe da max_chars_per_line;
-  se eccede si tengono le ULTIME righe (in diretta contano le parole recenti);
-- dopo clear_after_silence_seconds senza testo il sottopancia si svuota,
-  ma mai prima di hold_seconds dall'ultima pubblicazione.
+Rules (from SubtitleConfig):
+- FINALS are published immediately;
+- PARTIALS are published only if stable for min_update_interval_ms, or
+  — to avoid leaving the lower third empty during long sentences — at a maximum
+  cadence of one update every min_update_interval_ms;
+- never two identical consecutive publications;
+- the text wraps by words onto max_lines lines of max_chars_per_line;
+  if it exceeds, the LAST lines are kept (live, the recent words matter);
+- after clear_after_silence_seconds without text the lower third is cleared,
+  but never before hold_seconds since the last publication.
 
-Il formatter è guidato dall'esterno: feed_partial/feed_final dagli eventi del
-provider (anche da thread di lavoro) e tick() periodico dal pipeline. Il
-callback publish deve essere veloce e non bloccante (accodare, non fare HTTP).
+The formatter is driven externally: feed_partial/feed_final from the
+provider's events (including from worker threads) and periodic tick() from the
+pipeline. The publish callback must be fast and non-blocking (enqueue, no HTTP).
 """
 
 from __future__ import annotations
@@ -30,15 +30,15 @@ PublishCallback = Callable[[str], None]
 
 
 def clean_text(text: str) -> str:
-    """Normalizza gli spazi (i provider emettono spesso spazi doppi/finali)."""
+    """Normalize whitespace (providers often emit double/trailing spaces)."""
     return " ".join(text.split())
 
 
 def wrap_lines(text: str, max_chars: int, max_lines: int) -> list[str]:
-    """A capo per parole; le parole più lunghe di una riga vengono tagliate.
+    """Word wrap; words longer than a line are split.
 
-    Se il testo supera max_lines righe si tengono le ultime: in un sottopancia
-    live le parole più recenti sono quelle che l'operatore vuole in onda.
+    If the text exceeds max_lines lines, the last ones are kept: in a live
+    lower third the most recent words are the ones the operator wants on air.
     """
     lines: list[str] = []
     current = ""
@@ -73,12 +73,12 @@ class SubtitleFormatter:
         self._publish_cb = publish
         self._clock = clock
         self._lock = threading.Lock()
-        self._last_published: str | None = None  # None = mai pubblicato/reset
+        self._last_published: str | None = None  # None = never published/reset
         self._last_publish_time = float("-inf")
         self._pending = ""
-        self._pending_since = 0.0  # ultimo cambiamento del parziale
-        self._pending_first_seen = 0.0  # inizio della frase corrente
-        self._last_activity: float | None = None  # ultimo testo dal provider
+        self._pending_since = 0.0  # last change of the partial
+        self._pending_first_seen = 0.0  # start of the current sentence
+        self._last_activity: float | None = None  # last text from the provider
 
     # ------------------------------------------------------------------ input
 
@@ -107,16 +107,16 @@ class SubtitleFormatter:
             self._publish(cleaned, now)
 
     def tick(self) -> None:
-        """Da chiamare periodicamente (~250 ms): gestisce stabilità dei
-        parziali e pulizia dopo silenzio."""
+        """Call periodically (~250 ms): handles partial stability
+        and clearing after silence."""
         with self._lock:
             now = self._clock()
             self._maybe_publish_partial(now)
             self._maybe_clear_after_silence(now)
 
     def reset(self) -> None:
-        """Stato pulito (per STOP). Non pubblica nulla: è il pipeline a
-        decidere se svuotare anche il titolo in vMix."""
+        """Clean state (for STOP). Publishes nothing: it is the pipeline that
+        decides whether to also clear the title in vMix."""
         with self._lock:
             self._pending = ""
             self._last_published = None
@@ -144,15 +144,15 @@ class SubtitleFormatter:
         clear_after = self._config.clear_after_silence_seconds
         if clear_after <= 0:
             return
-        if not self._last_published:  # niente in onda: nulla da pulire
+        if not self._last_published:  # nothing on air: nothing to clear
             return
         if self._last_activity is None or now - self._last_activity < clear_after:
             return
         if now - self._last_publish_time < self._config.hold_seconds:
             return
-        # il parziale in sospeso va scartato: senza questo, un parziale mai
-        # finalizzato risorgerebbe al tick successivo e il sottopancia
-        # lampeggerebbe all'infinito testo/vuoto
+        # the pending partial must be discarded: without this, a partial never
+        # finalized would resurface on the next tick and the lower third
+        # would flicker text/empty forever
         self._pending = ""
         self._publish_cb("")
         self._last_published = ""

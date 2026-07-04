@@ -1,6 +1,6 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""VmixOutput tests (Milestone 4) — httpx.MockTransport, nessuna rete reale."""
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""VmixOutput tests (Milestone 4) — httpx.MockTransport, no real network."""
 
 from __future__ import annotations
 
@@ -54,10 +54,10 @@ def test_special_characters_are_encoded_and_roundtrip():
     vmix.set_text(text)
 
     raw_url = str(seen[0].url)
-    # nessun carattere pericoloso non codificato nella query
+    # no dangerous unencoded character in the query
     query = raw_url.split("?", 1)[1]
     assert "<" not in query and '"' not in query
-    # il valore decodificato deve tornare identico all'originale
+    # the decoded value must come back identical to the original
     assert seen[0].url.params["Value"] == text
 
 
@@ -93,7 +93,7 @@ def test_clear_text_sends_empty_value():
     assert seen[0].url.params["Value"] == ""
 
 
-# ---------------------------------------------------------------- errori
+# ---------------------------------------------------------------- errors
 
 
 def test_timeout_retries_then_raises_readable_error():
@@ -106,7 +106,7 @@ def test_timeout_retries_then_raises_readable_error():
     vmix = _vmix_with_handler(handler, host="10.0.0.9", port=9999)
     with pytest.raises(VmixError) as excinfo:
         vmix.set_text("ciao")
-    assert calls["count"] == ATTEMPTS  # un retry leggero, poi errore
+    assert calls["count"] == ATTEMPTS  # one light retry, then error
     message = str(excinfo.value)
     assert "10.0.0.9:9999" in message
     assert "vMix" in message
@@ -132,7 +132,7 @@ def test_transient_error_recovered_by_retry():
         return httpx.Response(200)
 
     vmix = _vmix_with_handler(handler)
-    vmix.set_text("ciao")  # non deve sollevare
+    vmix.set_text("ciao")  # must not raise
     assert calls["count"] == 2
 
 
@@ -146,7 +146,7 @@ def test_non_200_response_raises_without_retry():
     vmix = _vmix_with_handler(handler)
     with pytest.raises(VmixError) as excinfo:
         vmix.set_text("ciao")
-    assert calls["count"] == 1  # il server ha risposto: nessun retry
+    assert calls["count"] == 1  # the server responded: no retry
     assert "HTTP 500" in str(excinfo.value)
 
 
@@ -156,7 +156,7 @@ def test_auth_error_message_points_to_web_controller():
         vmix.test_connection()
     message = str(excinfo.value)
     assert "password" in message.lower()
-    assert "titolo" not in message.lower()  # non incolpare il nome del titolo
+    assert "titolo" not in message.lower()  # do not blame the title name
 
 
 def test_default_client_uses_short_timeout():
@@ -169,7 +169,7 @@ def test_default_client_uses_short_timeout():
         vmix.close()
 
 
-# ---------------------------------------------------------------- connessione
+# ---------------------------------------------------------------- connection
 
 
 def test_connection_parses_vmix_version():
@@ -187,7 +187,7 @@ def test_connection_with_unexpected_body_still_succeeds():
     assert vmix.test_connection() == ""
 
 
-# ---------------------------------------------------------------- servizi
+# ---------------------------------------------------------------- services
 
 
 def _configured_services(monkeypatch, handler, vmix_input="Sottopancia"):

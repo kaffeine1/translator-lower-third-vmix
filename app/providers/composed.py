@@ -1,14 +1,14 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Composizione SpeechProvider + TranslationProvider (v1.1).
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Composition of SpeechProvider + TranslationProvider (v1.1).
 
-ComposedRealtimeProvider unisce un provider di riconoscimento vocale (audio →
-testo sorgente) e un provider di traduzione (testo sorgente → testo tradotto)
-dietro l'interfaccia RealtimeTranslationProvider già usata dalla pipeline.
-Così pipeline future (Google Speech → DeepL, Faster-Whisper → MarianMT…) non
-richiedono modifiche a GUI o servizi.
+ComposedRealtimeProvider combines a speech recognition provider (audio →
+source text) and a translation provider (source text → translated text)
+behind the RealtimeTranslationProvider interface already used by the pipeline.
+This way future pipelines (Google Speech → DeepL, Faster-Whisper → MarianMT…)
+require no changes to the GUI or services.
 
-Include implementazioni finte per test/demo senza API.
+Includes fake implementations for tests/demos without APIs.
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ logger = logging.getLogger("app.providers.composed")
 
 
 class ComposedRealtimeProvider(RealtimeTranslationProvider):
-    """Adatta (SpeechProvider, TranslationProvider) all'interfaccia combinata.
+    """Adapts (SpeechProvider, TranslationProvider) to the combined interface.
 
-    Il testo sorgente riconosciuto viene tradotto e riemesso come evento
-    tradotto. Un contatore di sequenza scarta le traduzioni di parziali ormai
-    superati (o invalidati da un finale), evitando sfarfallii da risposte in
-    ritardo/fuori ordine dei traduttori reali."""
+    The recognized source text is translated and re-emitted as a translated
+    event. A sequence counter discards translations of partials that are now
+    outdated (or invalidated by a final), avoiding flicker from late/out-of-order
+    responses from real translators."""
 
     def __init__(self, speech: SpeechProvider, translator: TranslationProvider) -> None:
         super().__init__()
@@ -47,9 +47,9 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
 
     async def connect(self, config: ProviderConfig) -> None:
         self._closed = False
-        # gli SDK vocali (Azure, Google) invocano le callback su thread propri:
-        # cattura il loop qui per poterci pianificare le traduzioni in modo
-        # thread-safe da qualunque thread
+        # speech SDKs (Azure, Google) invoke callbacks on their own threads:
+        # capture the loop here so translations can be scheduled on it in a
+        # thread-safe way from any thread
         self._loop = asyncio.get_running_loop()
         await self._translator.connect(config)
         await self._speech.connect(config)
@@ -62,7 +62,7 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         await self._speech.close()
         await self._translator.close()
 
-    # -- callback dal SpeechProvider (può arrivare da un thread SDK) -----------
+    # -- callbacks from the SpeechProvider (may arrive from an SDK thread) -----
 
     def _schedule(self, coro) -> None:
         loop = self._loop
@@ -74,10 +74,10 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         except RuntimeError:
             running = None
         if running is loop:
-            # callback già sul loop (fake, provider asyncio): via immediata
+            # callback already on the loop (fake, asyncio provider): dispatch immediately
             loop.create_task(coro)
         else:
-            # callback da un thread SDK (Azure, Google): pianifica sul loop
+            # callback from an SDK thread (Azure, Google): schedule onto the loop
             try:
                 asyncio.run_coroutine_threadsafe(coro, loop)
             except RuntimeError:
@@ -89,8 +89,8 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         self._schedule(self._translate_partial(text, seq))
 
     def _on_source_final(self, text: str) -> None:
-        # un finale invalida i parziali pendenti ma la sua traduzione va
-        # sempre emessa
+        # a final invalidates pending partials but its translation must
+        # always be emitted
         self._seq += 1
         self._schedule(self._translate_final(text))
 
@@ -115,10 +115,10 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
 
 
 # --------------------------------------------------------------------------- #
-# Implementazioni finte (nessuna rete)
+# Fake implementations (no network)
 # --------------------------------------------------------------------------- #
 
-# Parlato sorgente simulato (spagnolo), da tradurre in italiano.
+# Simulated source speech (Spanish), to be translated into Italian.
 DEMO_SPEECH_SCRIPT: list[tuple[str, str]] = [
     ("partial", "Bienvenidos"),
     ("partial", "Bienvenidos a este"),
@@ -128,7 +128,7 @@ DEMO_SPEECH_SCRIPT: list[tuple[str, str]] = [
     ("final", "Gracias a todos por la participación."),
 ]
 
-# Traduzione demo spagnolo → italiano per le frasi dello script.
+# Demo Spanish → Italian translation for the script phrases.
 DEMO_TRANSLATION_MAP: dict[str, str] = {
     "Bienvenidos": "Benvenuti",
     "Bienvenidos a este": "Benvenuti a questo",
@@ -140,7 +140,7 @@ DEMO_TRANSLATION_MAP: dict[str, str] = {
 
 
 class FakeSpeechProvider(SpeechProvider):
-    """Emette testo sorgente scriptato su timeline, ignorando l'audio."""
+    """Emits scripted source text on a timeline, ignoring the audio."""
 
     def __init__(
         self,
@@ -190,7 +190,7 @@ class FakeSpeechProvider(SpeechProvider):
 
 
 class FakeTranslationTextProvider(TranslationProvider):
-    """Traduttore finto: usa una mappa (default: identità con marcatore)."""
+    """Fake translator: uses a map (default: identity with marker)."""
 
     def __init__(self, mapping: dict[str, str] | None = None, delay: float = 0.0) -> None:
         self._mapping = mapping if mapping is not None else DEMO_TRANSLATION_MAP
@@ -203,5 +203,5 @@ class FakeTranslationTextProvider(TranslationProvider):
 
 
 def make_demo_composed_provider() -> ComposedRealtimeProvider:
-    """Provider demo che dimostra la pipeline speech+traduzione separati."""
+    """Demo provider that showcases the separated speech+translation pipeline."""
     return ComposedRealtimeProvider(FakeSpeechProvider(), FakeTranslationTextProvider())

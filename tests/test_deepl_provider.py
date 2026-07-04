@@ -1,8 +1,8 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""DeepLTranslationProvider tests (v1.2) — httpx.MockTransport, nessuna rete.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""DeepLTranslationProvider tests (v1.2) — httpx.MockTransport, no network.
 
-Il live test è attivo SOLO con DEEPL_API_KEY e RUN_LIVE_TESTS=1.
+The live test is active ONLY with DEEPL_API_KEY and RUN_LIVE_TESTS=1.
 """
 
 from __future__ import annotations
@@ -179,7 +179,7 @@ def test_translation_registry_has_deepl():
 
 
 def test_deepl_not_in_realtime_selector():
-    # DeepL da solo non deve comparire nel selettore GUI dei provider realtime
+    # DeepL alone must not appear in the GUI selector of realtime providers
     from app.providers.registry import available_providers
 
     ids = [info.id for info in available_providers()]

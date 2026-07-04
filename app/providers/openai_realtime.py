@@ -1,24 +1,24 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""OpenAIRealtimeTranslationProvider — provider reale per la v1.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""OpenAIRealtimeTranslationProvider — real provider for v1.
 
-TUTTA la logica specifica di OpenAI vive qui: la GUI, i servizi e vMix non
-sanno nulla del protocollo. Usa la Realtime API via WebSocket: l'audio PCM16
-viene inviato come input_audio_buffer.append, il modello traduce il parlato
-nella lingua di destinazione e restituisce testo (delta parziali + testo
-finale) che diventano eventi on_partial_text / on_final_text.
+ALL OpenAI-specific logic lives here: the GUI, the services, and vMix know
+nothing about the protocol. It uses the Realtime API over WebSocket: PCM16
+audio is sent as input_audio_buffer.append, the model translates the speech
+into the target language and returns text (partial deltas + final text) that
+become on_partial_text / on_final_text events.
 
-Sicurezza:
-- la API key è letta da secure storage (SecretStore), mai da config.yaml;
-- la key non compare mai nei log né nei messaggi d'errore (gli header non
-  vengono mai loggati).
+Security:
+- the API key is read from secure storage (SecretStore), never from config.yaml;
+- the key never appears in the logs nor in error messages (headers are never
+  logged).
 
-Robustezza:
-- riconnessione automatica con backoff dopo una caduta di connessione;
-- close() ferma il task di ricezione senza lasciare task/thread appesi.
+Robustness:
+- automatic reconnection with backoff after a dropped connection;
+- close() stops the receive task without leaving tasks/threads hanging.
 
-Il connettore WebSocket è iniettabile per consentire test senza rete: i test
-passano un connettore finto; in produzione si usa la libreria ``websockets``.
+The WebSocket connector is injectable to allow network-free tests: tests pass
+a fake connector; in production the ``websockets`` library is used.
 """
 
 from __future__ import annotations
@@ -38,9 +38,9 @@ REALTIME_URL = "wss://api.openai.com/v1/realtime"
 DEFAULT_REALTIME_MODEL = "gpt-4o-realtime-preview"
 MAX_BACKOFF_S = 30.0
 
-# Un connettore riceve (url, headers) e restituisce un oggetto WebSocket con
-# metodi async send(str) / recv() -> str / close(). websockets soddisfa questa
-# forma; i test iniettano un finto.
+# A connector receives (url, headers) and returns a WebSocket object with
+# async methods send(str) / recv() -> str / close(). websockets satisfies this
+# shape; tests inject a fake.
 WebSocketConnector = Callable[[str, dict], Awaitable[object]]
 
 _TEXT_DELTA_TYPES = {"response.text.delta", "response.output_text.delta"}
@@ -49,13 +49,13 @@ _RESPONSE_START_TYPES = {"response.created"}
 
 
 class OpenAIProviderError(Exception):
-    """Errore del provider con messaggio leggibile dall'operatore (italiano)."""
+    """Provider error with an operator-readable message (Italian)."""
 
 
 async def _default_connector(url: str, headers: dict) -> object:
     import websockets
 
-    # websockets >=12 usa additional_headers; le versioni precedenti extra_headers
+    # websockets >=12 uses additional_headers; earlier versions extra_headers
     try:
         return await websockets.connect(url, additional_headers=headers)
     except TypeError:
@@ -95,8 +95,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         self._config = config
         self._closed = False
         api_key = self._load_key()
-        # prima connessione sincrona: se la key è errata o la rete è giù,
-        # l'errore risale subito a chi avvia (start_translation lo mostra)
+        # first synchronous connection: if the key is wrong or the network is
+        # down, the error propagates immediately to the caller (start_translation shows it)
         ws = await self._open(api_key)
         self._ws = ws
         self._task = asyncio.create_task(self._receive_and_reconnect(api_key))
@@ -112,7 +112,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         try:
             await ws.send(json.dumps(payload))
         except Exception:
-            # la caduta viene gestita dal loop di ricezione/riconnessione
+            # the drop is handled by the receive/reconnect loop
             logger.debug("Invio audio fallito: connessione non disponibile")
 
     async def close(self) -> None:
@@ -131,7 +131,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
             except asyncio.CancelledError:
                 pass
 
-    # ------------------------------------------------------------------ interno
+    # ------------------------------------------------------------------ internal
 
     def _load_key(self) -> str:
         key = self._secret_store.get_api_key(self._provider_name)
@@ -189,7 +189,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
                     )
                 if self._closed:
                     break
-                # connessione caduta: avvisa e riprova con backoff
+                # connection dropped: notify and retry with backoff
                 self._emit_error("Connessione persa, riprovo…")
                 self._ws = None
                 await asyncio.sleep(min(backoff, MAX_BACKOFF_S))
@@ -200,7 +200,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
                 except asyncio.CancelledError:
                     raise
                 except OpenAIProviderError:
-                    continue  # riproverà al giro successivo
+                    continue  # will retry on the next round
         except asyncio.CancelledError:
             pass
 
@@ -238,8 +238,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         code = error.get("code", "")
         if code in ("invalid_api_key", "authentication_error"):
             return "API key non valida"
-        # il messaggio grezzo di OpenAI può contenere dettagli tecnici: teniamo
-        # un testo semplice per l'operatore
+        # OpenAI's raw message may contain technical details: keep
+        # a simple text for the operator
         return "Errore dal provider di traduzione"
 
     @staticmethod
@@ -260,11 +260,11 @@ async def check_api_key(
     connector: WebSocketConnector | None = None,
     timeout_s: float = 8.0,
 ) -> None:
-    """Verifica la chiave aprendo una sessione realtime e chiudendola subito.
+    """Verifies the key by opening a realtime session and closing it immediately.
 
-    Non invia audio, quindi non consuma token di traduzione. Solleva
-    OpenAIProviderError con messaggio leggibile in caso di key mancante,
-    non valida o rete assente.
+    It sends no audio, so it does not consume translation tokens. Raises
+    OpenAIProviderError with a readable message if the key is missing,
+    invalid, or the network is unavailable.
     """
     provider = OpenAIRealtimeTranslationProvider(
         secret_store, provider_name, model=model, connector=connector
@@ -282,7 +282,7 @@ async def check_api_key(
     except Exception as exc:
         raise provider._translate_connect_error(exc) from None
     try:
-        # una prima risposta (session.created) conferma l'autenticazione
+        # a first response (session.created) confirms authentication
         await asyncio.wait_for(ws.recv(), timeout=timeout_s)
     except TimeoutError as exc:
         raise OpenAIProviderError(

@@ -1,9 +1,9 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
 """TranslationPipeline integration tests (Milestone 6).
 
-Provider finto → formatter → uscita finta. Verificano il flusso end-to-end e
-soprattutto che STOP non lasci thread appesi.
+Fake provider → formatter → fake output. They verify the end-to-end flow and
+above all that STOP does not leave hanging threads.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from app.providers.fake import FakeTranslationProvider
 
 
 class _Collector:
-    """Raccoglie in modo thread-safe i sottotitoli/uscite dai vari thread."""
+    """Collects subtitles/outputs from the various threads in a thread-safe way."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -43,7 +43,7 @@ def _wait_until(predicate, timeout=5.0) -> bool:
 
 def _fast_config() -> AppConfig:
     config = AppConfig()
-    # intervallo breve così i parziali/finali passano in fretta nei test
+    # short interval so partials/finals pass through quickly in the tests
     config.subtitles.min_update_interval_ms = 100
     return config
 
@@ -65,14 +65,14 @@ def test_pipeline_end_to_end_produces_subtitles():
     pipeline.start()
     try:
         assert _wait_until(lambda: "Ciao a tutti" in output.snapshot())
-        # il testo raggiunge sia l'anteprima GUI sia l'uscita (vMix)
+        # the text reaches both the GUI preview and the output (vMix)
         assert "Ciao a tutti" in preview.snapshot()
     finally:
         pipeline.stop()
 
 
 def test_pipeline_stop_leaves_no_hanging_threads():
-    provider = FakeTranslationProvider(step_delay=0.05)  # loop infinito
+    provider = FakeTranslationProvider(step_delay=0.05)  # infinite loop
     pipeline = TranslationPipeline(
         provider, _fast_config(), on_subtitle=_Collector(), output_publish=_Collector()
     )
@@ -80,7 +80,7 @@ def test_pipeline_stop_leaves_no_hanging_threads():
     pipeline.start()
     assert _wait_until(lambda: len(threading.enumerate()) > len(before))
     pipeline.stop()
-    # i thread della pipeline devono essere tutti terminati
+    # the pipeline threads must all be terminated
     assert _wait_until(
         lambda: not any(
             t.name.startswith("pipeline-") for t in threading.enumerate()
@@ -113,7 +113,7 @@ def test_pipeline_forwards_provider_error():
 
 
 def test_pipeline_survives_output_that_raises():
-    # se l'uscita (vMix) solleva, la pipeline non deve cadere né bloccarsi
+    # if the output (vMix) raises, the pipeline must not crash nor block
     preview = _Collector()
 
     def broken_output(text: str) -> None:
@@ -129,7 +129,7 @@ def test_pipeline_survives_output_that_raises():
     )
     pipeline.start()
     try:
-        # l'anteprima continua a ricevere nonostante l'uscita rotta
+        # the preview keeps receiving despite the broken output
         assert _wait_until(lambda: "Seconda" in preview.snapshot())
     finally:
         pipeline.stop()
@@ -142,7 +142,7 @@ def test_pipeline_double_start_is_safe():
     )
     pipeline.start()
     try:
-        pipeline.start()  # secondo start ignorato, nessuna eccezione
+        pipeline.start()  # second start ignored, no exception
     finally:
         pipeline.stop()
-    pipeline.stop()  # secondo stop ignorato
+    pipeline.stop()  # second stop ignored

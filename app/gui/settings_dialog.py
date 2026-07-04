@@ -1,10 +1,10 @@
 # Translator Lower Third for vMix
-# Autore: Michele Dipace <michele.dipace@kaffeine.net>
-"""Finestra impostazioni.
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Settings window.
 
-Il dialogo non tocca disco né secret store: costruisce un AppConfig con
-result_config() ed espone la chiave digitata con entered_api_key(); è il
-chiamante (MainWindow) che salva. Questo lo rende testabile senza I/O.
+The dialog touches neither disk nor the secret store: it builds an AppConfig
+with result_config() and exposes the typed key via entered_api_key(); it is the
+caller (MainWindow) that saves. This makes it testable without I/O.
 """
 
 from __future__ import annotations
@@ -32,18 +32,18 @@ LANGUAGES = [
     ("Portoghese", "pt"),
 ]
 
-# Popolato dal registro dei provider: (nome visualizzato, id).
+# Populated from the provider registry: (display name, id).
 PROVIDERS = [(info.display_name, info.id) for info in available_providers()]
 
 SYSTEM_DEFAULT_DEVICE = "Predefinito di sistema"
 
 
 def _select_by_data(combo: QComboBox, data: object) -> None:
-    """Seleziona la voce con il dato indicato.
+    """Selects the entry with the given data.
 
-    Se il valore salvato non è in elenco (dispositivo scollegato, config
-    modificata a mano) viene aggiunta una voce che lo conserva: salvare senza
-    toccare la tendina non deve mai riscrivere silenziosamente il valore.
+    If the saved value is not in the list (disconnected device, config
+    edited by hand) an entry is added that preserves it: saving without
+    touching the dropdown must never silently rewrite the value.
     """
     index = combo.findData(data)
     if index < 0 and data is not None:
@@ -148,7 +148,7 @@ class SettingsDialog(QDialog):
 
     def _load(self, config: AppConfig, has_saved_api_key: bool) -> None:
         _select_by_data(self.provider_combo, config.provider)
-        # la chiave salvata non viene mai mostrata: campo vuoto = non modificare
+        # the saved key is never shown: empty field = do not change
         self.api_key_edit.setPlaceholderText(
             "Chiave già salvata (lascia vuoto per non modificarla)"
             if has_saved_api_key
@@ -186,5 +186,5 @@ class SettingsDialog(QDialog):
         return config
 
     def entered_api_key(self) -> str:
-        """Chiave digitata dall'utente; stringa vuota = non modificare quella salvata."""
+        """Key typed by the user; empty string = do not change the saved one."""
         return self.api_key_edit.text().strip()
