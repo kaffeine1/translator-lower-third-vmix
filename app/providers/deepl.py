@@ -19,6 +19,7 @@ import logging
 import httpx
 
 from app.config.secrets import SecretStore
+from app.i18n import t
 from app.providers.base import ProviderConfig, TranslationProvider
 
 logger = logging.getLogger("app.providers.deepl")
@@ -62,7 +63,7 @@ class DeepLTranslationProvider(TranslationProvider):
         key = self._secret_store.get_api_key(self._provider_name) if self._secret_store else None
         if not key:
             raise DeepLError(
-                "Nessuna chiave DeepL salvata. Inseriscila nelle Impostazioni."
+                t("deepl.no_api_key")
             )
         self._base_url = self.base_url_for_key(key)
         self._headers = {"Authorization": f"DeepL-Auth-Key {key}"}
@@ -73,7 +74,7 @@ class DeepLTranslationProvider(TranslationProvider):
         if not text.strip():
             return ""
         if self._client is None:
-            raise DeepLError("Provider DeepL non connesso")
+            raise DeepLError(t("deepl.not_connected"))
         try:
             response = await self._client.post(
                 f"{self._base_url}/v2/translate",
@@ -87,7 +88,7 @@ class DeepLTranslationProvider(TranslationProvider):
         except httpx.TransportError as exc:
             logger.warning("DeepL non raggiungibile: %s", type(exc).__name__)
             raise DeepLError(
-                "Impossibile raggiungere DeepL. Controlla la connessione Internet."
+                t("deepl.unreachable")
             ) from None
         if response.status_code != 200:
             raise DeepLError(self._status_message(response.status_code))
@@ -96,7 +97,7 @@ class DeepLTranslationProvider(TranslationProvider):
             return translations[0]["text"]
         except (ValueError, KeyError, IndexError) as exc:
             logger.warning("Risposta DeepL inattesa: %s", type(exc).__name__)
-            raise DeepLError("Risposta di DeepL non valida") from None
+            raise DeepLError(t("deepl.invalid_response")) from None
 
     async def close(self) -> None:
         if self._owns_client and self._client is not None:
@@ -106,9 +107,9 @@ class DeepLTranslationProvider(TranslationProvider):
     @staticmethod
     def _status_message(status_code: int) -> str:
         if status_code in (401, 403):
-            return "Chiave DeepL non valida"
+            return t("deepl.api_key_invalid")
         if status_code == 456:
-            return "Quota DeepL esaurita"
+            return t("deepl.quota_exceeded")
         if status_code == 429:
-            return "Troppe richieste a DeepL: riprova tra poco"
-        return f"DeepL ha risposto con un errore (HTTP {status_code})"
+            return t("deepl.too_many_requests")
+        return t("deepl.http_error", status_code=status_code)

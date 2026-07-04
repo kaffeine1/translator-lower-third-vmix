@@ -9,6 +9,8 @@ from enum import Enum
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout
 
+from app.i18n import t
+
 
 class StatusState(Enum):
     RED = "rosso"
@@ -23,9 +25,9 @@ _STATE_COLORS = {
 }
 
 _STATE_TOOLTIPS = {
-    StatusState.RED: "Errore",
-    StatusState.YELLOW: "Non verificato",
-    StatusState.GREEN: "OK",
+    StatusState.RED: t("widgets.status.error"),
+    StatusState.YELLOW: t("widgets.status.unverified"),
+    StatusState.GREEN: t("widgets.status.ok"),
 }
 
 
@@ -72,7 +74,7 @@ class AudioLevelMeter(QProgressBar):
 class SubtitlePreview(QFrame):
     """Preview of the last translated subtitle, on a dark lower-third-style background."""
 
-    PLACEHOLDER = "— nessun sottotitolo —"
+    PLACEHOLDER = t("widgets.subtitle.placeholder")
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from app.audio.devices import AudioDevice
 from app.config.models import AppConfig
+from app.i18n import available_locales, t
 from app.providers.registry import available_providers
 
 LANGUAGES = [
@@ -35,7 +36,7 @@ LANGUAGES = [
 # Populated from the provider registry: (display name, id).
 PROVIDERS = [(info.display_name, info.id) for info in available_providers()]
 
-SYSTEM_DEFAULT_DEVICE = "Predefinito di sistema"
+SYSTEM_DEFAULT_DEVICE = t("settings.system_default_device")
 
 
 def _select_by_data(combo: QComboBox, data: object) -> None:
@@ -47,7 +48,7 @@ def _select_by_data(combo: QComboBox, data: object) -> None:
     """
     index = combo.findData(data)
     if index < 0 and data is not None:
-        combo.addItem(f"{data} (non in elenco)", data)
+        combo.addItem(t("settings.device_not_in_list", data=data), data)
         index = combo.count() - 1
     combo.setCurrentIndex(index if index >= 0 else 0)
 
@@ -61,7 +62,7 @@ class SettingsDialog(QDialog):
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Impostazioni")
+        self.setWindowTitle(t("settings.window_title"))
         self.setMinimumWidth(420)
         self._build_ui(devices)
         self._load(config, has_saved_api_key)
@@ -71,7 +72,15 @@ class SettingsDialog(QDialog):
     def _build_ui(self, devices: list[AudioDevice]) -> None:
         layout = QVBoxLayout(self)
 
-        provider_box = QGroupBox("Provider di traduzione")
+        interface_box = QGroupBox(t("settings.group.interface"))
+        interface_form = QFormLayout(interface_box)
+        self.lang_combo = QComboBox()
+        for code, name in available_locales().items():
+            self.lang_combo.addItem(name, code)
+        interface_form.addRow(t("settings.label.ui_language"), self.lang_combo)
+        layout.addWidget(interface_box)
+
+        provider_box = QGroupBox(t("settings.group.provider"))
         provider_form = QFormLayout(provider_box)
         self.provider_combo = QComboBox()
         for label, code in PROVIDERS:
@@ -83,36 +92,36 @@ class SettingsDialog(QDialog):
         for label, code in LANGUAGES:
             self.source_combo.addItem(label, code)
             self.target_combo.addItem(label, code)
-        provider_form.addRow("Provider:", self.provider_combo)
-        provider_form.addRow("API key:", self.api_key_edit)
-        provider_form.addRow("Lingua sorgente:", self.source_combo)
-        provider_form.addRow("Lingua destinazione:", self.target_combo)
+        provider_form.addRow(t("settings.label.provider"), self.provider_combo)
+        provider_form.addRow(t("settings.label.api_key"), self.api_key_edit)
+        provider_form.addRow(t("settings.label.source_language"), self.source_combo)
+        provider_form.addRow(t("settings.label.target_language"), self.target_combo)
         layout.addWidget(provider_box)
 
-        audio_box = QGroupBox("Audio")
+        audio_box = QGroupBox(t("settings.group.audio"))
         audio_form = QFormLayout(audio_box)
         self.device_combo = QComboBox()
         self.device_combo.addItem(SYSTEM_DEFAULT_DEVICE, None)
         for device in devices:
             self.device_combo.addItem(device.name, device.id)
-        audio_form.addRow("Ingresso audio:", self.device_combo)
+        audio_form.addRow(t("settings.label.audio_input"), self.device_combo)
         layout.addWidget(audio_box)
 
-        vmix_box = QGroupBox("vMix")
+        vmix_box = QGroupBox(t("settings.group.vmix"))
         vmix_form = QFormLayout(vmix_box)
         self.host_edit = QLineEdit()
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
         self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText("Nome, numero o UUID del titolo in vMix")
+        self.input_edit.setPlaceholderText(t("settings.vmix.input_placeholder"))
         self.field_edit = QLineEdit()
-        vmix_form.addRow("Host:", self.host_edit)
-        vmix_form.addRow("Porta:", self.port_spin)
-        vmix_form.addRow("Input/Titolo:", self.input_edit)
-        vmix_form.addRow("Campo testo:", self.field_edit)
+        vmix_form.addRow(t("settings.label.vmix_host"), self.host_edit)
+        vmix_form.addRow(t("settings.label.vmix_port"), self.port_spin)
+        vmix_form.addRow(t("settings.label.vmix_input"), self.input_edit)
+        vmix_form.addRow(t("settings.label.vmix_field"), self.field_edit)
         layout.addWidget(vmix_box)
 
-        subtitles_box = QGroupBox("Sottotitoli")
+        subtitles_box = QGroupBox(t("settings.group.subtitles"))
         subtitles_form = QFormLayout(subtitles_box)
         self.chars_spin = QSpinBox()
         self.chars_spin.setRange(8, 120)
@@ -128,18 +137,18 @@ class SettingsDialog(QDialog):
         self.clear_spin = QSpinBox()
         self.clear_spin.setRange(0, 120)
         self.clear_spin.setSuffix(" s")
-        subtitles_form.addRow("Max caratteri per riga:", self.chars_spin)
-        subtitles_form.addRow("Max righe:", self.lines_spin)
-        subtitles_form.addRow("Intervallo minimo aggiornamento:", self.interval_spin)
-        subtitles_form.addRow("Mantieni sottotitolo per:", self.hold_spin)
-        subtitles_form.addRow("Cancella dopo silenzio:", self.clear_spin)
+        subtitles_form.addRow(t("settings.label.max_chars"), self.chars_spin)
+        subtitles_form.addRow(t("settings.label.max_lines"), self.lines_spin)
+        subtitles_form.addRow(t("settings.label.min_interval"), self.interval_spin)
+        subtitles_form.addRow(t("settings.label.hold"), self.hold_spin)
+        subtitles_form.addRow(t("settings.label.clear_silence"), self.clear_spin)
         layout.addWidget(subtitles_box)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Salva")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Annulla")
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText(t("settings.button.save"))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(t("settings.button.cancel"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -147,12 +156,13 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------ data
 
     def _load(self, config: AppConfig, has_saved_api_key: bool) -> None:
+        _select_by_data(self.lang_combo, config.ui_language)
         _select_by_data(self.provider_combo, config.provider)
         # the saved key is never shown: empty field = do not change
         self.api_key_edit.setPlaceholderText(
-            "Chiave già salvata (lascia vuoto per non modificarla)"
+            t("settings.api_key.placeholder_saved")
             if has_saved_api_key
-            else "Inserisci la chiave API"
+            else t("settings.api_key.placeholder_new")
         )
         _select_by_data(self.source_combo, config.source_language)
         _select_by_data(self.target_combo, config.target_language)
@@ -170,6 +180,7 @@ class SettingsDialog(QDialog):
 
     def result_config(self) -> AppConfig:
         config = AppConfig.from_dict(self._base_config.to_dict())
+        config.ui_language = self.lang_combo.currentData()
         config.provider = self.provider_combo.currentData()
         config.source_language = self.source_combo.currentData()
         config.target_language = self.target_combo.currentData()

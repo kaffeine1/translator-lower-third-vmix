@@ -15,6 +15,7 @@ import yaml
 
 from app import APP_NAME
 from app.config.models import AppConfig
+from app.i18n import t
 
 logger = logging.getLogger("app.config")
 
@@ -55,10 +56,7 @@ class ConfigManager:
             data = yaml.safe_load(raw)
         except (OSError, yaml.YAMLError) as exc:
             self._backup_corrupt_file()
-            self.load_warning = (
-                "La configurazione salvata era danneggiata: sono stati ripristinati "
-                "i valori predefiniti. Controlla le impostazioni."
-            )
+            self.load_warning = t("config.load_corrupt")
             logger.warning("Config non leggibile (%s): ripristino predefiniti", type(exc).__name__)
             return AppConfig()
         if data is None:

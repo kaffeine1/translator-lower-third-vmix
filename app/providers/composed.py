@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.i18n import t
 from app.providers.base import (
     ProviderConfig,
     RealtimeTranslationProvider,
@@ -108,7 +109,7 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
             translated = await self._translator.translate(text)
         except Exception:
             logger.exception("Traduzione finale fallita")
-            self._emit_error("Errore di traduzione")
+            self._emit_error(t("provider.translate_failed"))
             return
         if not self._closed and translated:
             self._emit_final(translated)

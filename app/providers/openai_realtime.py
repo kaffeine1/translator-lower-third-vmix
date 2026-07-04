@@ -30,6 +30,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from app.config.secrets import SecretStore
+from app.i18n import t
 from app.providers.base import ProviderConfig, RealtimeTranslationProvider
 
 logger = logging.getLogger("app.providers.openai")
@@ -137,7 +138,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         key = self._secret_store.get_api_key(self._provider_name)
         if not key:
             raise OpenAIProviderError(
-                "Nessuna chiave API salvata. Inseriscila nelle Impostazioni."
+                t("openai.no_api_key")
             )
         return key
 
@@ -190,7 +191,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
                 if self._closed:
                     break
                 # connection dropped: notify and retry with backoff
-                self._emit_error("Connessione persa, riprovo…")
+                self._emit_error(t("provider.connection_lost"))
                 self._ws = None
                 await asyncio.sleep(min(backoff, MAX_BACKOFF_S))
                 backoff = min(backoff * 2, MAX_BACKOFF_S)
@@ -237,19 +238,19 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         error = data.get("error") or {}
         code = error.get("code", "")
         if code in ("invalid_api_key", "authentication_error"):
-            return "API key non valida"
+            return t("provider.api_key_invalid")
         # OpenAI's raw message may contain technical details: keep
         # a simple text for the operator
-        return "Errore dal provider di traduzione"
+        return t("provider.translation_error")
 
     @staticmethod
     def _translate_connect_error(exc: Exception) -> OpenAIProviderError:
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         text = str(exc)
         if status in (401, 403) or "401" in text or "403" in text:
-            return OpenAIProviderError("API key non valida")
+            return OpenAIProviderError(t("provider.api_key_invalid"))
         return OpenAIProviderError(
-            "Impossibile raggiungere OpenAI. Controlla la connessione Internet."
+            t("openai.unreachable")
         )
 
 
@@ -277,7 +278,7 @@ async def check_api_key(
         )
     except TimeoutError as exc:
         raise OpenAIProviderError(
-            "Impossibile raggiungere OpenAI. Controlla la connessione Internet."
+            t("openai.unreachable")
         ) from exc
     except Exception as exc:
         raise provider._translate_connect_error(exc) from None
@@ -286,7 +287,7 @@ async def check_api_key(
         await asyncio.wait_for(ws.recv(), timeout=timeout_s)
     except TimeoutError as exc:
         raise OpenAIProviderError(
-            "OpenAI non ha risposto in tempo. Riprova."
+            t("openai.no_response")
         ) from exc
     finally:
         try:

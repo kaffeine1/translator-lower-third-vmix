@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.i18n import t
 from app.providers.base import ProviderConfig, RealtimeTranslationProvider
 
 logger = logging.getLogger("app.providers.fake")
@@ -68,7 +69,7 @@ class FakeTranslationProvider(RealtimeTranslationProvider):
                         return
                     await asyncio.sleep(self._step_delay)
                     if self._fail_at_index is not None and index >= self._fail_at_index:
-                        self._emit_error("Connessione persa, riprovo…")
+                        self._emit_error(t("provider.connection_lost"))
                         return
                     if kind == "partial":
                         self._emit_partial(text)
@@ -81,7 +82,7 @@ class FakeTranslationProvider(RealtimeTranslationProvider):
             raise
         except Exception:  # a provider must never let the loop crash
             logger.exception("Errore nel FakeTranslationProvider")
-            self._emit_error("Errore interno del provider di traduzione")
+            self._emit_error(t("provider.internal_error"))
 
     async def send_audio(self, chunk: bytes) -> None:
         # the fake provider ignores audio: it emits text on its own timeline

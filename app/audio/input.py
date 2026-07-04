@@ -21,6 +21,7 @@ from app.audio.devices import (
     list_input_devices,
     resolve_device_index,
 )
+from app.i18n import t
 
 logger = logging.getLogger("app.audio")
 
@@ -104,11 +105,7 @@ class SoundDeviceAudioInput(AudioInput):
                     pass
             self._on_chunk = None
             logger.warning("Apertura ingresso audio fallita: %s", type(exc).__name__)
-            raise AudioInputError(
-                "Impossibile aprire l'ingresso audio selezionato. "
-                "Controlla che il dispositivo sia collegato, poi riprova "
-                "o scegline un altro nelle Impostazioni."
-            ) from exc
+            raise AudioInputError(t("audio.open_failed")) from exc
         self._stream = stream
         logger.info(
             "Cattura audio avviata (device=%s, %s Hz, %s canali)",

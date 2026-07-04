@@ -330,6 +330,13 @@ def test_settings_dialog_roundtrip(qapp):
     assert result.subtitles.max_lines == 2
 
 
+def test_settings_dialog_has_ui_language_selector(qapp):
+    dialog = SettingsDialog(AppConfig(), MockAppServices().list_audio_devices())
+    # defaults to Italian; result_config carries it through
+    assert dialog.lang_combo.currentData() == "it"
+    assert dialog.result_config().ui_language == "it"
+
+
 def test_settings_dialog_never_prefills_api_key(qapp):
     dialog = SettingsDialog(
         AppConfig(), MockAppServices().list_audio_devices(), has_saved_api_key=True

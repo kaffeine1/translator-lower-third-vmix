@@ -96,6 +96,7 @@ class AppConfig:
     provider: str = "openai"
     source_language: str = "es"
     target_language: str = "it"
+    ui_language: str = "it"  # interface language (i18n); distinct from source/target
     audio: AudioConfig = field(default_factory=AudioConfig)
     vmix: VmixConfig = field(default_factory=VmixConfig)
     subtitles: SubtitleConfig = field(default_factory=SubtitleConfig)
@@ -107,6 +108,7 @@ class AppConfig:
             provider=_as_str(data.get("provider"), "openai"),
             source_language=_as_str(data.get("source_language"), "es"),
             target_language=_as_str(data.get("target_language"), "it"),
+            ui_language=_as_str(data.get("ui_language"), "it"),
             audio=AudioConfig.from_dict(data.get("audio")),
             vmix=VmixConfig.from_dict(data.get("vmix")),
             subtitles=SubtitleConfig.from_dict(data.get("subtitles")),

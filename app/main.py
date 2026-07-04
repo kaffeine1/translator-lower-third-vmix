@@ -16,6 +16,7 @@ from app import APP_DISPLAY_NAME, APP_NAME, __version__
 from app.audio.input import SoundDeviceAudioInput
 from app.config.manager import ConfigManager
 from app.config.secrets import KeyringSecretStore, SecretStorageError
+from app.i18n import set_locale, t
 from app.logging.setup import setup_logging
 from app.services import LiveAppServices
 
@@ -38,6 +39,8 @@ def main() -> int:
     manager = ConfigManager()
     first_run = not manager.config_path.exists()
     config = manager.load()
+    # activate the interface language before building any UI
+    set_locale(config.ui_language)
 
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -69,8 +72,7 @@ def main() -> int:
                 QMessageBox.warning(
                     None,
                     APP_DISPLAY_NAME,
-                    "Impossibile salvare la configurazione su disco. "
-                    "Potrai riprovare dal pulsante Impostazioni.",
+                    t("app.config_save_failed"),
                 )
             key = wizard.entered_api_key()
             if key:

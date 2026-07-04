@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.i18n import t
+
 
 class AudioInputError(Exception):
     """Audio error with an operator-readable message (in Italian)."""
@@ -41,9 +43,7 @@ def list_input_devices() -> list[AudioDevice]:
 
         devices = sd.query_devices()
     except Exception as exc:
-        raise AudioInputError(
-            "Impossibile leggere l'elenco dei dispositivi audio"
-        ) from exc
+        raise AudioInputError(t("audio.list_failed")) from exc
 
     default_index: int | None = None
     default_hostapi: int | None = None
@@ -89,7 +89,4 @@ def resolve_device_index(device_id: int | str | None) -> int | None:
     for device in list_input_devices():
         if device.id == device_id:
             return device.index
-    raise AudioInputError(
-        f'L\'ingresso audio salvato "{device_id}" non è più disponibile. '
-        "Controlla che sia collegato o scegline un altro nelle Impostazioni."
-    )
+    raise AudioInputError(t("audio.saved_device_unavailable", device_id=device_id))

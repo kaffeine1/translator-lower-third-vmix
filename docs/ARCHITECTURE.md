@@ -216,6 +216,19 @@ alone produces no subtitles: it must be paired with a `SpeechProvider` inside a
 `ComposedRealtimeProvider`. Tests use `httpx.MockTransport`; a live test is
 gated on `DEEPL_API_KEY` + `RUN_LIVE_TESTS=1`.
 
+### Localization (`app/i18n.py`)
+
+All operator-facing strings go through `t("key", **kwargs)`, which looks the key
+up in the catalog for the active locale, formats `{named}` placeholders, and
+falls back to the default locale and then to the key. This covers every layer
+(GUI, services, providers, vMix, audio), not just Qt widgets, because operator
+messages are raised in exceptions and `ServiceResult` values too. Only Italian
+(`"it"`) is populated today; adding a language means adding a dict to `CATALOGS`
+and an entry to `AVAILABLE_LOCALES`. The active locale comes from
+`config.ui_language`, set at startup (`main.py`) before any UI is built and
+chosen in Settings ("Lingua interfaccia"). Diagnostic `logger.*` strings are
+intentionally left as literals (they are not part of the operator UI).
+
 ## Threading Model
 
 - GUI runs on the Qt main thread.

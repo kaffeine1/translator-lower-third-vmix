@@ -20,6 +20,7 @@ import threading
 from collections.abc import Callable
 
 from app.config.secrets import SecretStore
+from app.i18n import t
 from app.providers.base import ProviderConfig, SpeechProvider
 
 logger = logging.getLogger("app.providers.google")
@@ -70,10 +71,7 @@ class GoogleSpeechProvider(SpeechProvider):
             else None
         )
         if not credentials:
-            raise GoogleSpeechError(
-                "Credenziali Google non impostate (percorso del file JSON del "
-                "service account). Inseriscile nelle Impostazioni."
-            )
+            raise GoogleSpeechError(t("google.no_credentials"))
         self._engine = self._engine_factory(
             credentials=credentials,
             language=_lang(config.source_language),
@@ -101,10 +99,7 @@ def _make_real_engine(**kwargs) -> object:
     try:
         from google.cloud import speech
     except ImportError:
-        raise GoogleSpeechError(
-            "Modulo Google Speech non installato. Installa 'google-cloud-speech' "
-            "per usare questo provider."
-        ) from None
+        raise GoogleSpeechError(t("google.module_not_installed")) from None
     return _GoogleEngine(speech, **kwargs)
 
 
@@ -188,4 +183,4 @@ class _GoogleEngine:
         except Exception:
             if not self._closed:
                 logger.warning("Streaming Google Speech interrotto")
-                self._on_error("Connessione persa con Google Speech")
+                self._on_error(t("google.connection_lost"))

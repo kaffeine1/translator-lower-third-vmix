@@ -15,6 +15,8 @@ from typing import Protocol
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
+from app.i18n import t
+
 SERVICE_NAME = "TranslatorLowerThird"
 
 
@@ -51,17 +53,17 @@ class KeyringSecretStore:
             return keyring.get_password(SERVICE_NAME, _account_name(provider))
         except KeyringError as exc:
             raise SecretStorageError(
-                f"Impossibile leggere la chiave API dal sistema ({type(exc).__name__})"
+                t("secrets.read_failed", error=type(exc).__name__)
             ) from None
 
     def set_api_key(self, provider: str, value: str) -> None:
         if not value:
-            raise SecretStorageError("La chiave API non può essere vuota")
+            raise SecretStorageError(t("secrets.empty_key"))
         try:
             keyring.set_password(SERVICE_NAME, _account_name(provider), value)
         except KeyringError as exc:
             raise SecretStorageError(
-                f"Impossibile salvare la chiave API nel sistema ({type(exc).__name__})"
+                t("secrets.save_failed", error=type(exc).__name__)
             ) from None
 
     def delete_api_key(self, provider: str) -> None:
@@ -71,7 +73,7 @@ class KeyringSecretStore:
             pass  # already absent — deleting a missing key is not an error
         except KeyringError as exc:
             raise SecretStorageError(
-                f"Impossibile eliminare la chiave API dal sistema ({type(exc).__name__})"
+                t("secrets.delete_failed", error=type(exc).__name__)
             ) from None
 
 
@@ -86,7 +88,7 @@ class InMemorySecretStore:
 
     def set_api_key(self, provider: str, value: str) -> None:
         if not value:
-            raise SecretStorageError("La chiave API non può essere vuota")
+            raise SecretStorageError(t("secrets.empty_key"))
         self._store[provider] = value
 
     def delete_api_key(self, provider: str) -> None:

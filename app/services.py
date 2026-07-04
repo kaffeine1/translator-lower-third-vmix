@@ -22,6 +22,7 @@ from app.audio.input import AudioInput
 from app.audio.levels import rms_level
 from app.config.models import AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
+from app.i18n import t
 from app.outputs.vmix import TEST_PHRASE, VmixError, VmixOutput
 
 logger = logging.getLogger("app.services")
@@ -123,33 +124,33 @@ class MockAppServices(AppServices):
         self, device_id: int | str | None, on_level: LevelCallback
     ) -> ServiceResult:
         if self.fail_audio:
-            return ServiceResult(False, "Impossibile aprire l'ingresso audio selezionato")
+            return ServiceResult(False, t("service.audio_open_failed"))
         self.monitoring = True
         for level in self.mock_levels:
             on_level(level)
-        return ServiceResult(True, "Ascolto in corso… parla nel microfono")
+        return ServiceResult(True, t("service.audio_listening"))
 
     def stop_audio_monitor(self) -> None:
         self.monitoring = False
 
     def test_api(self) -> ServiceResult:
         if self.fail_api:
-            return ServiceResult(False, "API key non valida")
-        return ServiceResult(True, "Connessione API riuscita (demo)")
+            return ServiceResult(False, t("service.api_key_invalid"))
+        return ServiceResult(True, t("service.api_connection_ok_demo"))
 
     def test_vmix(self) -> ServiceResult:
         if self.fail_vmix:
-            return ServiceResult(False, "vMix non raggiungibile")
-        return ServiceResult(True, "Frase di prova inviata a vMix (demo)")
+            return ServiceResult(False, t("service.vmix_unreachable"))
+        return ServiceResult(True, t("service.vmix_test_sent_demo"))
 
     def start_translation(self) -> ServiceResult:
         self.running = True
-        self._emit_subtitle("Benvenuti a questo evento dal vivo (demo)")
-        return ServiceResult(True, "Traduzione avviata (demo)")
+        self._emit_subtitle(t("service.demo_subtitle"))
+        return ServiceResult(True, t("service.translation_started_demo"))
 
     def stop_translation(self) -> ServiceResult:
         self.running = False
-        return ServiceResult(True, "Traduzione fermata")
+        return ServiceResult(True, t("service.translation_stopped"))
 
 
 class LiveAppServices(MockAppServices):
@@ -202,22 +203,22 @@ class LiveAppServices(MockAppServices):
 
     def test_api(self) -> ServiceResult:
         if self._config is None:
-            return ServiceResult(False, "Configurazione non disponibile")
+            return ServiceResult(False, t("service.config_unavailable"))
         from app.providers.registry import get_provider_info
 
         provider_id = self._config.provider
         info = get_provider_info(provider_id)
         if info is not None and not info.requires_api_key:
-            return ServiceResult(True, "Modalità demo: nessuna chiave API necessaria")
+            return ServiceResult(True, t("service.demo_mode_no_key"))
         if self._secret_store is None:
-            return ServiceResult(False, "Configurazione non disponibile")
+            return ServiceResult(False, t("service.config_unavailable"))
         try:
             key = self._secret_store.get_api_key(provider_id)
         except SecretStorageError as exc:
             return ServiceResult(False, str(exc))
         if not key:
             return ServiceResult(
-                False, "Nessuna chiave API salvata. Inseriscila nelle Impostazioni."
+                False, t("service.no_api_key_saved")
             )
         import asyncio
 
@@ -230,15 +231,15 @@ class LiveAppServices(MockAppServices):
         except Exception:
             logger.exception("Verifica API fallita")
             return ServiceResult(
-                False, "Impossibile verificare la chiave API. Consulta i log."
+                False, t("service.api_verify_failed")
             )
-        return ServiceResult(True, "Connessione API riuscita")
+        return ServiceResult(True, t("service.api_connection_ok"))
 
     def start_translation(self) -> ServiceResult:
         if self._config is None:
-            return ServiceResult(False, "Configurazione non disponibile")
+            return ServiceResult(False, t("service.config_unavailable"))
         if self._pipeline is not None:
-            return ServiceResult(True, "Traduzione già avviata")
+            return ServiceResult(True, t("service.translation_already_started"))
 
         from app.pipeline import TranslationPipeline
 
@@ -276,12 +277,12 @@ class LiveAppServices(MockAppServices):
             logger.exception("Avvio pipeline fallito")
             vmix.close()
             return ServiceResult(
-                False, "Impossibile avviare la traduzione. Consulta i log."
+                False, t("service.translation_start_failed")
             )
         self._pipeline = pipeline
         self._vmix = vmix
         self.running = True
-        return ServiceResult(True, "Traduzione avviata")
+        return ServiceResult(True, t("service.translation_started"))
 
     def stop_translation(self) -> ServiceResult:
         if self._pipeline is not None:
@@ -295,11 +296,11 @@ class LiveAppServices(MockAppServices):
             self._vmix.close()
             self._vmix = None
         self.running = False
-        return ServiceResult(True, "Traduzione fermata")
+        return ServiceResult(True, t("service.translation_stopped"))
 
     def test_vmix(self) -> ServiceResult:
         if self._config is None:
-            return ServiceResult(False, "Configurazione non disponibile")
+            return ServiceResult(False, t("service.config_unavailable"))
         vmix_config = self._config.vmix
         vmix = VmixOutput(
             host=vmix_config.host,
@@ -314,13 +315,12 @@ class LiveAppServices(MockAppServices):
                 # the Input/Title field is on the previous page
                 return ServiceResult(
                     False,
-                    "vMix raggiungibile, ma manca il nome del titolo: "
-                    "compila il campo Input/Titolo.",
+                    t("service.vmix_missing_title"),
                 )
             vmix.set_text(TEST_PHRASE)
             suffix = f" (vMix {version})" if version else ""
             return ServiceResult(
-                True, f'Frase di prova inviata al titolo "{vmix_config.input}"{suffix}'
+                True, t("service.vmix_test_sent", input=vmix_config.input, suffix=suffix)
             )
         except VmixError as exc:
             return ServiceResult(False, str(exc))
@@ -329,8 +329,7 @@ class LiveAppServices(MockAppServices):
             logger.warning("Indirizzo vMix non valido: %s", type(exc).__name__)
             return ServiceResult(
                 False,
-                f'Indirizzo vMix non valido ("{vmix_config.host}:{vmix_config.port}"). '
-                "Controlla i campi Host e Porta: l'host non deve contenere la porta.",
+                t("service.vmix_invalid_address", host=vmix_config.host, port=vmix_config.port),
             )
         finally:
             vmix.close()
@@ -356,7 +355,7 @@ class LiveAppServices(MockAppServices):
             )
         except AudioInputError as exc:
             return ServiceResult(False, str(exc))
-        return ServiceResult(True, "Ascolto in corso… parla nel microfono")
+        return ServiceResult(True, t("service.audio_listening"))
 
     def stop_audio_monitor(self) -> None:
         self._audio.stop()

@@ -1,0 +1,204 @@
+# Translator Lower Third for vMix
+# Author: Michele Dipace <michele.dipace@kaffeine.net>
+"""Central localization (i18n).
+
+``t(key, **kwargs)`` returns the operator-facing string for the active locale,
+formatted with the given keyword arguments. For now only Italian ("it") is
+populated; the structure is ready for more languages -- adding a language means
+adding a dict to ``CATALOGS`` and an entry to ``AVAILABLE_LOCALES``. Missing
+keys fall back to the default locale and then to the key itself, so a typo is
+visible but never crashes.
+
+This layer covers every part of the app (GUI, services, providers, vMix, audio),
+not just Qt widgets, because operator messages live outside the widget tree too.
+"""
+
+from __future__ import annotations
+
+DEFAULT_LOCALE = "it"
+
+# Locales offered in the UI: code -> display name. Extend when adding languages.
+AVAILABLE_LOCALES: dict[str, str] = {
+    "it": "Italiano",
+}
+
+# Per-locale catalogs. Values may contain {named} placeholders filled via t(**kwargs).
+CATALOGS: dict[str, dict[str, str]] = {
+    "it": {
+        "gui.status_audio": "Stato Audio:",
+        "gui.status_api": "Stato API:",
+        "gui.status_vmix": "Stato vMix:",
+        "gui.preview_label": "Anteprima sottotitolo:",
+        "gui.btn_test_audio": "Test Audio",
+        "gui.btn_test_api": "Test API",
+        "gui.btn_test_vmix": "Test vMix",
+        "gui.btn_settings": "Impostazioni",
+        "gui.btn_open_log": "Apri Log",
+        "gui.btn_info": "Info",
+        "gui.status_ready": "Pronto",
+        "gui.btn_stop_test": "Ferma Test",
+        "gui.audio_detected": "Audio rilevato",
+        "gui.audio_none": "Nessun audio in ingresso",
+        "gui.vmix_checking": "Verifica vMix in corso…",
+        "gui.settings_title": "Impostazioni",
+        "gui.settings_save_failed": "Impossibile salvare le impostazioni su disco. Controlla lo spazio disponibile e i permessi, poi riprova.",
+        "gui.settings_saved": "Impostazioni salvate",
+        "gui.yes": "sì",
+        "gui.no": "no",
+        "gui.diagnostics": "{app_name}\nVersione: {version}\n{description}\n\nAutore: {author} <{author_email}>\n\nProvider: {provider}\nChiave API salvata: {has_key}\nLingue: {source_language} → {target_language}\nvMix: {vmix_host}:{vmix_port}\n\nConfigurazione:\n{config_path}\n\nLog:\n{log_dir}",
+        "gui.info_title": "Informazioni su {app_name}",
+        "gui.unexpected_error": "Si è verificato un errore inatteso. Consulta i log (pulsante Apri Log).",
+        "gui.operation_failed": "Operazione non riuscita",
+        "settings.system_default_device": "Predefinito di sistema",
+        "settings.device_not_in_list": "{data} (non in elenco)",
+        "settings.window_title": "Impostazioni",
+        "settings.group.interface": "Interfaccia",
+        "settings.label.ui_language": "Lingua interfaccia:",
+        "settings.group.provider": "Provider di traduzione",
+        "settings.label.provider": "Provider:",
+        "settings.label.api_key": "API key:",
+        "settings.label.source_language": "Lingua sorgente:",
+        "settings.label.target_language": "Lingua destinazione:",
+        "settings.group.audio": "Audio",
+        "settings.label.audio_input": "Ingresso audio:",
+        "settings.group.vmix": "vMix",
+        "settings.vmix.input_placeholder": "Nome, numero o UUID del titolo in vMix",
+        "settings.label.vmix_host": "Host:",
+        "settings.label.vmix_port": "Porta:",
+        "settings.label.vmix_input": "Input/Titolo:",
+        "settings.label.vmix_field": "Campo testo:",
+        "settings.group.subtitles": "Sottotitoli",
+        "settings.label.max_chars": "Max caratteri per riga:",
+        "settings.label.max_lines": "Max righe:",
+        "settings.label.min_interval": "Intervallo minimo aggiornamento:",
+        "settings.label.hold": "Mantieni sottotitolo per:",
+        "settings.label.clear_silence": "Cancella dopo silenzio:",
+        "settings.button.save": "Salva",
+        "settings.button.cancel": "Annulla",
+        "settings.api_key.placeholder_saved": "Chiave già salvata (lascia vuoto per non modificarla)",
+        "settings.api_key.placeholder_new": "Inserisci la chiave API",
+        "wizard.window_title": "Prima configurazione",
+        "wizard.button.back": "< Indietro",
+        "wizard.button.next": "Avanti >",
+        "wizard.button.finish": "Fine",
+        "wizard.button.cancel": "Annulla",
+        "wizard.audio.title": "1. Scegli l'ingresso audio",
+        "wizard.audio.input_label": "Ingresso audio:",
+        "wizard.key.title": "2. Inserisci la chiave API",
+        "wizard.key.placeholder": "Chiave API del provider (OpenAI)",
+        "wizard.key.label": "API key:",
+        "wizard.key.note": "La chiave viene salvata in modo sicuro in Windows,\nmai in file di testo.",
+        "wizard.api_test.title": "3. Verifica la chiave API",
+        "wizard.api_test.intro": "Premi il pulsante per verificare la connessione al provider.",
+        "wizard.api_test.button": "Esegui Test API",
+        "wizard.vmix.title": "4. Configura vMix",
+        "wizard.vmix.input_placeholder": "Nome, numero o UUID del titolo in vMix",
+        "wizard.vmix.host_label": "Host:",
+        "wizard.vmix.port_label": "Porta:",
+        "wizard.vmix.input_label": "Input/Titolo:",
+        "wizard.vmix.field_label": "Campo testo:",
+        "wizard.vmix_test.title": "5. Verifica vMix",
+        "wizard.vmix_test.intro": "Premi il pulsante per inviare una frase di prova al titolo configurato.",
+        "wizard.vmix_test.button": "Esegui Test vMix",
+        "wizard.final.title": "6. Salva e avvia",
+        "wizard.final.note": "Premi Fine per salvare la configurazione e aprire l'applicazione.",
+        "wizard.test.running": "Verifica in corso…",
+        "wizard.test.unexpected_error": "✘ Errore inatteso durante il test. Consulta i log.",
+        "wizard.test.result": "{icon} {message}",
+        "widgets.status.error": "Errore",
+        "widgets.status.unverified": "Non verificato",
+        "widgets.status.ok": "OK",
+        "widgets.subtitle.placeholder": "— nessun sottotitolo —",
+        "service.audio_open_failed": "Impossibile aprire l'ingresso audio selezionato",
+        "service.audio_listening": "Ascolto in corso… parla nel microfono",
+        "service.api_key_invalid": "API key non valida",
+        "service.api_connection_ok_demo": "Connessione API riuscita (demo)",
+        "service.vmix_unreachable": "vMix non raggiungibile",
+        "service.vmix_test_sent_demo": "Frase di prova inviata a vMix (demo)",
+        "service.demo_subtitle": "Benvenuti a questo evento dal vivo (demo)",
+        "service.translation_started_demo": "Traduzione avviata (demo)",
+        "service.translation_stopped": "Traduzione fermata",
+        "service.config_unavailable": "Configurazione non disponibile",
+        "service.demo_mode_no_key": "Modalità demo: nessuna chiave API necessaria",
+        "service.no_api_key_saved": "Nessuna chiave API salvata. Inseriscila nelle Impostazioni.",
+        "service.api_verify_failed": "Impossibile verificare la chiave API. Consulta i log.",
+        "service.api_connection_ok": "Connessione API riuscita",
+        "service.translation_already_started": "Traduzione già avviata",
+        "service.translation_start_failed": "Impossibile avviare la traduzione. Consulta i log.",
+        "service.translation_started": "Traduzione avviata",
+        "service.vmix_missing_title": "vMix raggiungibile, ma manca il nome del titolo: compila il campo Input/Titolo.",
+        "service.vmix_test_sent": "Frase di prova inviata al titolo \"{input}\"{suffix}",
+        "service.vmix_invalid_address": "Indirizzo vMix non valido (\"{host}:{port}\"). Controlla i campi Host e Porta: l'host non deve contenere la porta.",
+        "vmix.no_title_configured": "Nessun titolo vMix configurato: imposta il campo Input/Titolo nelle Impostazioni.",
+        "vmix.unreachable": "vMix non raggiungibile su {host}:{port}. Controlla che vMix sia aperto e che il Web Controller sia attivo.",
+        "vmix.error_auth_required": "vMix richiede una password per il Web Controller (HTTP {status_code}). Controlla le impostazioni Web Controller in vMix.",
+        "vmix.error_settext": "vMix ha risposto con un errore (HTTP {status_code}). Controlla il nome del titolo e del campo di testo.",
+        "vmix.error_generic": "vMix ha risposto con un errore (HTTP {status_code}). Controlla host, porta e impostazioni del Web Controller.",
+        "audio.list_failed": "Impossibile leggere l'elenco dei dispositivi audio",
+        "audio.saved_device_unavailable": "L'ingresso audio salvato \"{device_id}\" non è più disponibile. Controlla che sia collegato o scegline un altro nelle Impostazioni.",
+        "audio.open_failed": "Impossibile aprire l'ingresso audio selezionato. Controlla che il dispositivo sia collegato, poi riprova o scegline un altro nelle Impostazioni.",
+        "openai.no_api_key": "Nessuna chiave API salvata. Inseriscila nelle Impostazioni.",
+        "openai.unreachable": "Impossibile raggiungere OpenAI. Controlla la connessione Internet.",
+        "openai.no_response": "OpenAI non ha risposto in tempo. Riprova.",
+        "provider.connection_lost": "Connessione persa, riprovo…",
+        "provider.api_key_invalid": "API key non valida",
+        "provider.translation_error": "Errore dal provider di traduzione",
+        "provider.internal_error": "Errore interno del provider di traduzione",
+        "provider.translate_failed": "Errore di traduzione",
+        "deepl.no_api_key": "Nessuna chiave DeepL salvata. Inseriscila nelle Impostazioni.",
+        "deepl.not_connected": "Provider DeepL non connesso",
+        "deepl.unreachable": "Impossibile raggiungere DeepL. Controlla la connessione Internet.",
+        "deepl.invalid_response": "Risposta di DeepL non valida",
+        "deepl.api_key_invalid": "Chiave DeepL non valida",
+        "deepl.quota_exceeded": "Quota DeepL esaurita",
+        "deepl.too_many_requests": "Troppe richieste a DeepL: riprova tra poco",
+        "deepl.http_error": "DeepL ha risposto con un errore (HTTP {status_code})",
+        "azure.no_key": "Nessuna chiave Azure Speech salvata. Inseriscila nelle Impostazioni.",
+        "azure.no_region": "Regione Azure non impostata (es. westeurope). Inseriscila nelle Impostazioni.",
+        "azure.module_not_installed": "Modulo Azure Speech non installato. Installa 'azure-cognitiveservices-speech' per usare questo provider.",
+        "azure.connection_lost": "Connessione persa con Azure Speech",
+        "google.no_credentials": "Credenziali Google non impostate (percorso del file JSON del service account). Inseriscile nelle Impostazioni.",
+        "google.module_not_installed": "Modulo Google Speech non installato. Installa 'google-cloud-speech' per usare questo provider.",
+        "google.connection_lost": "Connessione persa con Google Speech",
+        "config.load_corrupt": "La configurazione salvata era danneggiata: sono stati ripristinati i valori predefiniti. Controlla le impostazioni.",
+        "secrets.read_failed": "Impossibile leggere la chiave API dal sistema ({error})",
+        "secrets.save_failed": "Impossibile salvare la chiave API nel sistema ({error})",
+        "secrets.delete_failed": "Impossibile eliminare la chiave API dal sistema ({error})",
+        "secrets.empty_key": "La chiave API non può essere vuota",
+        "app.config_save_failed": "Impossibile salvare la configurazione su disco. Potrai riprovare dal pulsante Impostazioni.",
+    },
+}
+
+_state = {"locale": DEFAULT_LOCALE}
+
+
+def set_locale(code: str | None) -> None:
+    """Set the active locale (falls back to the default if unknown)."""
+    _state["locale"] = code if code in CATALOGS else DEFAULT_LOCALE
+
+
+def get_locale() -> str:
+    return _state["locale"]
+
+
+def available_locales() -> dict[str, str]:
+    """code -> display name for the languages the app can show."""
+    return dict(AVAILABLE_LOCALES)
+
+
+def t(key: str, **kwargs: object) -> str:
+    """Localized string for ``key`` in the active locale.
+
+    Falls back to the default locale, then to the key. Formats with kwargs if
+    the string has {named} placeholders.
+    """
+    catalog = CATALOGS.get(_state["locale"], {})
+    text = catalog.get(key)
+    if text is None:
+        text = CATALOGS[DEFAULT_LOCALE].get(key, key)
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except (KeyError, IndexError, ValueError):
+            pass
+    return text

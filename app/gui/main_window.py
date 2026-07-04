@@ -38,6 +38,7 @@ from app.config.models import AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
 from app.gui.settings_dialog import SettingsDialog
 from app.gui.widgets import AudioLevelMeter, StatusLight, StatusState, SubtitlePreview
+from app.i18n import t
 from app.services import AppServices, ServiceResult
 
 logger = logging.getLogger("app.gui")
@@ -97,9 +98,9 @@ class MainWindow(QMainWindow):
         self.vmix_light = StatusLight()
         for row, (label, light) in enumerate(
             [
-                ("Stato Audio:", self.audio_light),
-                ("Stato API:", self.api_light),
-                ("Stato vMix:", self.vmix_light),
+                (t("gui.status_audio"), self.audio_light),
+                (t("gui.status_api"), self.api_light),
+                (t("gui.status_vmix"), self.vmix_light),
             ]
         ):
             status_grid.addWidget(QLabel(label), row, 0)
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
         status_grid.setColumnStretch(2, 1)
         layout.addLayout(status_grid)
 
-        layout.addWidget(QLabel("Anteprima sottotitolo:"))
+        layout.addWidget(QLabel(t("gui.preview_label")))
         self.preview = SubtitlePreview()
         layout.addWidget(self.preview)
 
@@ -127,22 +128,22 @@ class MainWindow(QMainWindow):
         layout.addLayout(run_row)
 
         test_row = QHBoxLayout()
-        self.btn_test_audio = QPushButton("Test Audio")
+        self.btn_test_audio = QPushButton(t("gui.btn_test_audio"))
         self.btn_test_audio.setObjectName("btn_test_audio")
-        self.btn_test_api = QPushButton("Test API")
+        self.btn_test_api = QPushButton(t("gui.btn_test_api"))
         self.btn_test_api.setObjectName("btn_test_api")
-        self.btn_test_vmix = QPushButton("Test vMix")
+        self.btn_test_vmix = QPushButton(t("gui.btn_test_vmix"))
         self.btn_test_vmix.setObjectName("btn_test_vmix")
         for button in (self.btn_test_audio, self.btn_test_api, self.btn_test_vmix):
             test_row.addWidget(button)
         layout.addLayout(test_row)
 
         tools_row = QHBoxLayout()
-        self.btn_settings = QPushButton("Impostazioni")
+        self.btn_settings = QPushButton(t("gui.btn_settings"))
         self.btn_settings.setObjectName("btn_settings")
-        self.btn_open_log = QPushButton("Apri Log")
+        self.btn_open_log = QPushButton(t("gui.btn_open_log"))
         self.btn_open_log.setObjectName("btn_open_log")
-        self.btn_info = QPushButton("Info")
+        self.btn_info = QPushButton(t("gui.btn_info"))
         self.btn_info.setObjectName("btn_info")
         tools_row.addWidget(self.btn_settings)
         tools_row.addWidget(self.btn_open_log)
@@ -150,7 +151,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(tools_row)
 
         self.setCentralWidget(central)
-        self.statusBar().showMessage("Pronto")
+        self.statusBar().showMessage(t("gui.status_ready"))
 
     def _wire(self) -> None:
         self.btn_start.clicked.connect(self._on_start)
@@ -208,7 +209,7 @@ class MainWindow(QMainWindow):
             self._audio_monitoring = False
             self.audio_light.set_state(StatusState.RED)
             return
-        self.btn_test_audio.setText("Ferma Test")
+        self.btn_test_audio.setText(t("gui.btn_stop_test"))
         self._audio_test_timer.start()
 
     def _on_audio_level(self, level: float) -> None:
@@ -228,11 +229,11 @@ class MainWindow(QMainWindow):
             self._services.stop_audio_monitor()
         except Exception:
             logger.exception("Errore fermando il test audio")
-        self.btn_test_audio.setText("Test Audio")
+        self.btn_test_audio.setText(t("gui.btn_test_audio"))
         self.level_meter.set_level(0.0)
         detected = self._audio_peak > AUDIO_DETECTED_THRESHOLD
         self.audio_light.set_state(StatusState.GREEN if detected else StatusState.RED)
-        message = "Audio rilevato" if detected else "Nessun audio in ingresso"
+        message = t("gui.audio_detected") if detected else t("gui.audio_none")
         self.statusBar().showMessage(message, 5000)
         (logger.info if detected else logger.warning)("%s", message)
 
@@ -247,7 +248,7 @@ class MainWindow(QMainWindow):
 
     def _on_test_vmix(self) -> None:
         self.btn_test_vmix.setEnabled(False)
-        self.statusBar().showMessage("Verifica vMix in corso…")
+        self.statusBar().showMessage(t("gui.vmix_checking"))
         self._call_service_async(self._services.test_vmix, self._after_test_vmix)
 
     def _after_test_vmix(self, result: ServiceResult | None) -> None:
@@ -274,9 +275,8 @@ class MainWindow(QMainWindow):
             logger.exception("Salvataggio configurazione fallito")
             QMessageBox.critical(
                 self,
-                "Impostazioni",
-                "Impossibile salvare le impostazioni su disco. "
-                "Controlla lo spazio disponibile e i permessi, poi riprova.",
+                t("gui.settings_title"),
+                t("gui.settings_save_failed"),
             )
             return False
         self._config = new_config
@@ -288,9 +288,9 @@ class MainWindow(QMainWindow):
             try:
                 self._secret_store.set_api_key(new_config.provider, api_key)
             except SecretStorageError as exc:
-                QMessageBox.warning(self, "Impostazioni", str(exc))
+                QMessageBox.warning(self, t("gui.settings_title"), str(exc))
                 return False
-        self.statusBar().showMessage("Impostazioni salvate", 5000)
+        self.statusBar().showMessage(t("gui.settings_saved"), 5000)
         return True
 
     def closeEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
@@ -321,21 +321,27 @@ class MainWindow(QMainWindow):
         Never contains secrets (the API key is only reported as present)."""
         provider = self._config.provider
         has_key = self._has_saved_api_key()
-        return (
-            f"{APP_DISPLAY_NAME}\n"
-            f"Versione: {__version__}\n"
-            f"{APP_DESCRIPTION}\n\n"
-            f"Autore: {__author__} <{__author_email__}>\n\n"
-            f"Provider: {provider}\n"
-            f"Chiave API salvata: {'sì' if has_key else 'no'}\n"
-            f"Lingue: {self._config.source_language} → {self._config.target_language}\n"
-            f"vMix: {self._config.vmix.host}:{self._config.vmix.port}\n\n"
-            f"Configurazione:\n{self._manager.config_path}\n\n"
-            f"Log:\n{get_log_dir()}"
+        return t(
+            "gui.diagnostics",
+            app_name=APP_DISPLAY_NAME,
+            version=__version__,
+            description=APP_DESCRIPTION,
+            author=__author__,
+            author_email=__author_email__,
+            provider=provider,
+            has_key=t("gui.yes") if has_key else t("gui.no"),
+            source_language=self._config.source_language,
+            target_language=self._config.target_language,
+            vmix_host=self._config.vmix.host,
+            vmix_port=self._config.vmix.port,
+            config_path=self._manager.config_path,
+            log_dir=get_log_dir(),
         )
 
     def _on_info(self) -> None:
-        QMessageBox.about(self, f"Informazioni su {APP_DISPLAY_NAME}", self.diagnostics_text())
+        QMessageBox.about(
+            self, t("gui.info_title", app_name=APP_DISPLAY_NAME), self.diagnostics_text()
+        )
 
     # ------------------------------------------------------------------ helper
 
@@ -348,7 +354,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 APP_DISPLAY_NAME,
-                "Si è verificato un errore inatteso. Consulta i log (pulsante Apri Log).",
+                t("gui.unexpected_error"),
             )
             return None
         self.statusBar().showMessage(result.message, 5000)
@@ -379,11 +385,11 @@ class MainWindow(QMainWindow):
 
     def _on_service_done(self, result: ServiceResult | None, on_done) -> None:
         if result is None:
-            self.statusBar().showMessage("Operazione non riuscita", 5000)
+            self.statusBar().showMessage(t("gui.operation_failed"), 5000)
             QMessageBox.critical(
                 self,
                 APP_DISPLAY_NAME,
-                "Si è verificato un errore inatteso. Consulta i log (pulsante Apri Log).",
+                t("gui.unexpected_error"),
             )
         else:
             self.statusBar().showMessage(result.message, 5000)

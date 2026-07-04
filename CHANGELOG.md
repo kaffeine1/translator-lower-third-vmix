@@ -9,6 +9,13 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Localizzazione (i18n)**: modulo `app/i18n.py` con `t("chiave", …)` e catalogo
+  per lingua. Tutti i messaggi visibili all'operatore (GUI, servizi, provider,
+  vMix, audio) passano dal catalogo. Per ora è presente solo l'italiano, ma la
+  struttura è pronta per altre lingue (basta aggiungere un dizionario).
+  Aggiunto il campo `ui_language` in configurazione, il selettore "Lingua
+  interfaccia" nelle Impostazioni e l'attivazione della lingua all'avvio.
+
 - **Registro dei provider** (`app/providers/registry.py`): i provider di
   traduzione sono dichiarati in un unico punto con id, nome e se richiedono una
   chiave API. Base per aggiungere provider futuri senza toccare GUI o servizi.

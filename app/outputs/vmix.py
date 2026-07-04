@@ -19,6 +19,8 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
+from app.i18n import t
+
 logger = logging.getLogger("app.outputs.vmix")
 
 DEFAULT_TIMEOUT_S = 2.0
@@ -62,10 +64,7 @@ class VmixOutput:
 
     def set_text(self, text: str) -> None:
         if not self.input:
-            raise VmixError(
-                "Nessun titolo vMix configurato: imposta il campo "
-                "Input/Titolo nelle Impostazioni."
-            )
+            raise VmixError(t("vmix.no_title_configured"))
         self._get(
             {
                 "Function": "SetText",
@@ -117,23 +116,13 @@ class VmixOutput:
                 raise VmixError(self._http_error_message(response.status_code, params))
             return response
         raise VmixError(
-            f"vMix non raggiungibile su {self.host}:{self.port}. "
-            "Controlla che vMix sia aperto e che il Web Controller sia attivo."
+            t("vmix.unreachable", host=self.host, port=self.port)
         ) from last_exc
 
     @staticmethod
     def _http_error_message(status_code: int, params: dict) -> str:
         if status_code in (401, 403):
-            return (
-                f"vMix richiede una password per il Web Controller (HTTP {status_code}). "
-                "Controlla le impostazioni Web Controller in vMix."
-            )
+            return t("vmix.error_auth_required", status_code=status_code)
         if params.get("Function") == "SetText":
-            return (
-                f"vMix ha risposto con un errore (HTTP {status_code}). "
-                "Controlla il nome del titolo e del campo di testo."
-            )
-        return (
-            f"vMix ha risposto con un errore (HTTP {status_code}). "
-            "Controlla host, porta e impostazioni del Web Controller."
-        )
+            return t("vmix.error_settext", status_code=status_code)
+        return t("vmix.error_generic", status_code=status_code)

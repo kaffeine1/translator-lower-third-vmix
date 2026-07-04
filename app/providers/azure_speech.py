@@ -18,6 +18,7 @@ import logging
 from collections.abc import Callable
 
 from app.config.secrets import SecretStore
+from app.i18n import t
 from app.providers.base import ProviderConfig, SpeechProvider
 
 logger = logging.getLogger("app.providers.azure")
@@ -67,16 +68,12 @@ class AzureSpeechProvider(SpeechProvider):
     async def connect(self, config: ProviderConfig) -> None:
         key = self._secret_store.get_api_key(self._provider_name) if self._secret_store else None
         if not key:
-            raise AzureSpeechError(
-                "Nessuna chiave Azure Speech salvata. Inseriscila nelle Impostazioni."
-            )
+            raise AzureSpeechError(t("azure.no_key"))
         region = self._region
         if not region and self._secret_store is not None:
             region = self._secret_store.get_api_key("azure-region")
         if not region:
-            raise AzureSpeechError(
-                "Regione Azure non impostata (es. westeurope). Inseriscila nelle Impostazioni."
-            )
+            raise AzureSpeechError(t("azure.no_region"))
         self._engine = self._engine_factory(
             key=key,
             region=region,
@@ -105,10 +102,7 @@ def _make_real_engine(**kwargs) -> object:
     try:
         import azure.cognitiveservices.speech as speechsdk
     except ImportError:
-        raise AzureSpeechError(
-            "Modulo Azure Speech non installato. Installa "
-            "'azure-cognitiveservices-speech' per usare questo provider."
-        ) from None
+        raise AzureSpeechError(t("azure.module_not_installed")) from None
     return _AzureEngine(speechsdk, **kwargs)
 
 
@@ -145,7 +139,7 @@ class _AzureEngine:
             lambda evt: on_final(evt.result.text) if evt.result.text else None
         )
         self._recognizer.canceled.connect(
-            lambda evt: on_error("Connessione persa con Azure Speech")
+            lambda evt: on_error(t("azure.connection_lost"))
         )
 
     def start(self) -> None:
