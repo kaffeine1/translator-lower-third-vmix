@@ -1,0 +1,28 @@
+# Secrets — never commit
+.env
+*.key
+*.pem
+config.local.yaml
+
+# Runtime artifacts
+logs/
+
+# Build artifacts
+dist/
+build/
+*.spec.bak
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# IDE
+.idea/
+.vscode/
+
+#AGENT
+.claude/
+CLAUDE.md

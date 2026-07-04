@@ -1,0 +1,17 @@
+# Dipendenze OPZIONALI per provider aggiuntivi (v1.2+).
+# NON necessarie per l'MVP (OpenAI Realtime + demo). Installa solo quello che
+# ti serve; i moduli relativi usano import lazy e restituiscono un errore
+# leggibile se il pacchetto manca.
+
+# Provider di traduzione cloud
+#   DeepL usa solo httpx (già in requirements.txt): nessuna dipendenza extra.
+
+# Provider vocali cloud (STT)
+azure-cognitiveservices-speech>=1.34   # AzureSpeechProvider
+google-cloud-speech>=2.21              # GoogleSpeechProvider
+
+# Provider locali (v1.3, non ancora implementati) — richiedono molto spazio e
+# idealmente una GPU NVIDIA:
+# faster-whisper>=1.0
+# transformers>=4.40
+# torch>=2.2
