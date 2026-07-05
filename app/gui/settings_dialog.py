@@ -88,7 +88,9 @@ class SettingsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # horizontal bar only if the window is ever forced narrower than the
+        # fields (very small screens) — normally the width fits and it stays hidden
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         content = QWidget()
         layout = QVBoxLayout(content)
 
@@ -195,13 +197,20 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
 
-        # Open large enough to show the content, but never taller than the screen
-        # (so the buttons below the scroll area are always reachable).
+        # Open large enough to show the content at its natural width — a
+        # QScrollArea's own sizeHint is narrow, so we must size from the content
+        # and add room for the vertical scrollbar (so it never clips the fields).
+        # Never exceed the available screen (so the buttons stay reachable).
+        hint = content.sizeHint()
+        vbar_w = scroll.verticalScrollBar().sizeHint().width()
         screen = self.screen() or QApplication.primaryScreen()
-        avail_h = screen.availableGeometry().height() if screen else 900
+        avail = screen.availableGeometry() if screen else None
+        avail_h = avail.height() if avail else 900
+        avail_w = avail.width() if avail else 1200
         max_h = max(360, avail_h - 80)
+        width = max(self.minimumWidth(), hint.width() + vbar_w + 4)
         self.setMaximumHeight(max_h)
-        self.resize(500, min(content.sizeHint().height() + 90, max_h))
+        self.resize(min(width, avail_w - 80), min(hint.height() + 90, max_h))
 
     # ------------------------------------------------------------------ data
 
