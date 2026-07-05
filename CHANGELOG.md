@@ -1,14 +1,27 @@
 # Changelog
 
-Tutte le modifiche rilevanti a Translator Lower Third for vMix sono elencate qui.
+Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+### Modificato
+
+- **Nome del programma semplificato in "Traduttore Live"**: cambia il nome
+  visibile (titolo finestra, riquadro Info, collegamenti e voce
+  nell'elenco programmi, Proprietà dell'eseguibile). Gli identificatori interni
+  restano invariati (cartella `%APPDATA%\TranslatorLowerThird`, log, nome
+  dell'eseguibile e servizio chiavi nel Credential Manager), così configurazione
+  e chiavi già salvate continuano a funzionare.
+
 ### Aggiunto
 
+- **Manuale d'uso dettagliato in italiano** (`docs/USER_GUIDE.md`): copre
+  installazione, primo avvio, ogni impostazione, configurazione di vMix, scelta e
+  configurazione dei provider (Demo, OpenAI, cloud, locali), conduzione della
+  diretta, log, sicurezza, risoluzione problemi e disinstallazione.
 - **Metadati di versione nei pacchetti**: l'eseguibile e l'installer ora
   riportano versione, autore e descrizione nelle Proprietà di Windows (la
   versione è letta da `app/__init__.py`, un'unica fonte). `build_installer.ps1`

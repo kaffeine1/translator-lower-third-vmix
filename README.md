@@ -1,6 +1,6 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 
-**Translator Lower Third for vMix** is a Windows desktop application that captures live speech audio, translates it in near real time, and sends the translated text to a vMix lower-third/title field.
+**Traduttore Live** (a live translator lower-third for vMix) is a Windows desktop application that captures live speech audio, translates it in near real time, and sends the translated text to a vMix lower-third/title field.
 
 Default scenario:
 

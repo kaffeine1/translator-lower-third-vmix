@@ -1,4 +1,4 @@
-# Architecture — Translator Lower Third for vMix
+# Architecture — Traduttore Live
 
 ## Overview
 

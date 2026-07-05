@@ -47,12 +47,12 @@ version_info = VSVersionInfo(
     kids=[
         StringFileInfo([StringTable("040904B0", [
             StringStruct("CompanyName", "Michele Dipace"),
-            StringStruct("FileDescription", "Translator Lower Third for vMix"),
+            StringStruct("FileDescription", "Traduttore Live"),
             StringStruct("FileVersion", _vstr),
             StringStruct("InternalName", "TranslatorLowerThird"),
             StringStruct("LegalCopyright", "Copyright (C) 2026 Michele Dipace"),
             StringStruct("OriginalFilename", "TranslatorLowerThird.exe"),
-            StringStruct("ProductName", "Translator Lower Third for vMix"),
+            StringStruct("ProductName", "Traduttore Live"),
             StringStruct("ProductVersion", _vstr),
         ])]),
         VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),

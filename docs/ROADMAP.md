@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-# Translator Lower Third for vMix — Roadmap
+# Traduttore Live — Roadmap
 
 ## Product Goal
 

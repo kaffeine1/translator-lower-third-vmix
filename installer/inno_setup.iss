@@ -1,9 +1,11 @@
-; Inno Setup script per Translator Lower Third for vMix.
+; Inno Setup script per Traduttore Live.
 ; Compila con:  scripts\build_installer.ps1  (richiede Inno Setup 6 / ISCC.exe)
 ; Presuppone che la build PyInstaller one-folder esista in
 ; dist\TranslatorLowerThird\  (vedi scripts\build_exe.ps1).
 
-#define MyAppName "Translator Lower Third for vMix"
+; MyAppName = user-visible name (shortcuts, Programs list). MyAppShortName =
+; internal id kept stable for the install folder and exe filename.
+#define MyAppName "Traduttore Live"
 #define MyAppShortName "TranslatorLowerThird"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "Michele Dipace"
