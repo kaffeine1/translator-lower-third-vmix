@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Generate assets/icon.ico using PySide6 (no external dependencies).
 

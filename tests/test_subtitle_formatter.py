@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """SubtitleFormatter tests (Milestone 5) — fake clock, no real waiting."""
 

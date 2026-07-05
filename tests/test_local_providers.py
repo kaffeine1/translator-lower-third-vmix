@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Local provider tests (v1.3) — fake engine/translator, no model download."""
 

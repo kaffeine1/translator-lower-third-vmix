@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Central localization (i18n).
 

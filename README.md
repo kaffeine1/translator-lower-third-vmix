@@ -1,487 +1,153 @@
 # Traduttore Live
 
-**Traduttore Live** (a live translator lower-third for vMix) is a Windows desktop application that captures live speech audio, translates it in near real time, and sends the translated text to a vMix lower-third/title field.
+> Live speech translation to a vMix lower-third — a Windows desktop app for live-production operators.
 
-Default scenario:
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
+![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
+![UI](https://img.shields.io/badge/GUI-PySide6-41CD52)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+**Traduttore Live** captures live speech audio, translates it in near real time and
+writes the translated text into a **vMix** lower-third/title field over the local
+HTTP API. It is built for non-technical live-production operators: install,
+configure once, press **START**. No terminal, no JSON editing, no Python install
+required on the operator's PC.
 
 ```text
-Spanish live audio → Italian translated subtitle → vMix lower third
+Spanish live audio  →  Italian subtitle  →  vMix lower third
 ```
 
-The application is designed for live production operators who should not need to use a terminal, edit JSON files, or understand API internals.
+> The application UI and the operator messages are in **Italian**. A detailed
+> Italian user manual is in **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**.
 
 ---
 
-## What This App Does
+## Features
 
-The app runs on the same Windows machine as vMix, or on another machine that can reach the vMix HTTP API.
+- **Italian GUI** with Audio / API / vMix **status lights**, live subtitle preview
+  and one-click tests (Test Audio, Test API, Test vMix).
+- **Provider-aware first-run wizard**: language & provider → the credentials it
+  actually needs → provider test → audio → vMix → vMix test → save.
+- **Multiple translation providers**, selectable from Settings (see below).
+- **Audio capture** from any Windows input device, with a level meter.
+- **Secure API keys** stored in the Windows Credential Manager — never in files,
+  never in logs.
+- **Anti-flicker subtitles**: aggregates partials, max two lines, de-duplicates,
+  holds and clears after silence.
+- **vMix output** via the HTTP API (`SetText`) with correct URL encoding, short
+  timeouts and a light retry.
+- **Rotating logs** with secret masking; an **About/diagnostics** panel.
+- **Localization (i18n) infrastructure** ready for more languages (Italian shipped).
 
-Runtime flow:
+## Providers
 
-```text
-Audio input
-   ↓
-Realtime translation provider
-   ↓
-Subtitle formatter
-   ↓
-vMix HTTP API
-   ↓
-Lower-third/title field
-```
+| Provider | Type | Credentials | Notes |
+|---|---|---|---|
+| **OpenAI Realtime** | Cloud, speech→translation | OpenAI API key | Realtime translation over WebSocket. |
+| **Demo (senza API)** | Local, no cost | — | Sample subtitles: try audio + vMix without any API. |
+| **Demo (speech + traduzione separati)** | Local, no cost | — | Same, simulating the split speech/translation pipeline. |
+| **Google Speech → DeepL** | Cloud, composed | Google credentials + DeepL key | Google STT + DeepL translation. |
+| **Azure Speech → DeepL** | Cloud, composed | Azure key + region + DeepL key | Azure STT + DeepL translation. |
+| **Locale (Faster-Whisper → MarianMT)** | Offline | — | Runs on your PC. Needs the optional packages (`requirements-optional.txt`) and, for smooth use, a GPU. |
 
-In the first release, the intended provider is OpenAI realtime translation. The architecture is modular so that Google, Azure, DeepL, local models, or a self-hosted translation server can be added later.
+> A ChatGPT Plus/Pro subscription is **not** API access — the app uses provider
+> **APIs and API keys**, not a browser session.
 
----
-
-## Main Features Planned for v1.0
-
-```text
-Windows GUI in Italian
-Audio input device selection
-Audio test meter
-OpenAI realtime translation provider
-Spanish → Italian default translation
-Subtitle anti-flicker buffer
-Maximum two-line lower-third formatting
-vMix HTTP API output
-Test vMix button
-Secure API key storage
-Readable logs
-PyInstaller executable
-Inno Setup installer
-```
+The architecture keeps providers behind interfaces (`SpeechProvider`,
+`TranslationProvider`, `RealtimeTranslationProvider`) so new providers are added
+in the registry without touching the GUI.
 
 ---
 
-## User Experience Goal
+## Install (operators)
 
-The final operator workflow should be:
+1. Download and run **`TranslatorLowerThird-Setup.exe`**.
+2. The build is **not code-signed**, so Windows SmartScreen shows an
+   "unknown publisher" warning: choose *More info → Run anyway*.
+3. Launch **Traduttore Live** from the Start menu. The first-run wizard guides you
+   through provider, audio and vMix setup.
 
-```text
-1. Install TranslatorLowerThird-Setup.exe
-2. Open the app
-3. Select audio input
-4. Enter API key
-5. Configure vMix
-6. Press Test Audio
-7. Press Test vMix
-8. Press START
-```
+See the **[Italian user manual](docs/USER_GUIDE.md)** for the full walkthrough,
+including how to configure vMix and each provider.
 
-No terminal. No Python installation. No manual configuration files.
+## vMix setup (quick)
 
----
-
-## Important Note About ChatGPT Subscriptions
-
-A ChatGPT Plus/Pro subscription is not the same thing as API access.
-
-For this application, provider access must be implemented through provider APIs and API keys. The app must not depend on a browser session or a normal ChatGPT subscription.
-
----
-
-## vMix Requirements
-
-vMix must have its web/API controller enabled and reachable.
-
-Default connection values:
+Enable vMix **Settings → Web Controller** (default port `8088`), then in
+*Settings → vMix* set host, port, the **Input/Title** name and the **text field**
+(default `Headline.Text`). The app sends:
 
 ```text
-Host: 127.0.0.1
-Port: 8088
-```
-
-Default title text field:
-
-```text
-Headline.Text
-```
-
-Example vMix API call shape:
-
-```text
-http://127.0.0.1:8088/api/?Function=SetText&Input=Sottopancia&SelectedName=Headline.Text&Value=Test%20sottopancia
-```
-
-The actual `Input` and `SelectedName` must match the vMix title used in the production project.
-
----
-
-## Audio Input Notes
-
-The app should work with any Windows audio input device visible to the system:
-
-```text
-Microphone
-Line input
-USB audio device
-Audio mixer output
-Virtual audio cable
-```
-
-Virtual audio drivers such as VB-Cable can be useful when routing audio from vMix or another application, but they are not mandatory and should not be installed automatically in v1.
-
----
-
-## Target Architecture
-
-```text
-app/
-├─ gui/          # PySide6 windows, dialogs, widgets
-├─ config/       # config files and secure secrets
-├─ audio/        # device list, audio capture, audio levels
-├─ providers/    # OpenAI, fake provider, future providers
-├─ subtitles/    # subtitle formatting and anti-flicker logic
-├─ outputs/      # vMix output and future outputs
-└─ logging/      # log setup
-```
-
-Main pipeline:
-
-```text
-AudioInput
-   ↓
-RealtimeTranslationProvider
-   ↓
-SubtitleFormatter
-   ↓
-VmixOutput
-```
-
-The GUI must control the pipeline but must not contain provider-specific or vMix-specific business logic.
-
----
-
-## Provider Strategy
-
-The MVP can start with one provider:
-
-```text
-OpenAIRealtimeTranslationProvider
-```
-
-A fake provider must also exist for development and demos:
-
-```text
-FakeTranslationProvider
-```
-
-Future providers:
-
-```text
-Google Speech + Google Translate
-Azure Speech + Azure Translator
-DeepL text translation
-Faster-Whisper local speech-to-text
-MarianMT local translation
-NLLB local translation
-Self-hosted REST/WebSocket provider
-```
-
-Design rule:
-
-```text
-Do not hardcode provider logic into the GUI.
+http://HOST:PORT/api/?Function=SetText&Input=INPUT&SelectedName=FIELD&Value=TEXT
 ```
 
 ---
 
-## Development Setup
+## Build from source
 
-Create a virtual environment:
+Requirements: Windows, Python 3.11+ (developed on 3.14), and — for the installer —
+[Inno Setup 6](https://jrsoftware.org/isdl.php).
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-dev.txt
-```
-
-Run tests:
-
-```powershell
-python -m pytest
-```
-
-Run lint:
-
-```powershell
-python -m ruff check .
-```
-
-Run app in development mode:
-
-```powershell
-python -m app.main
-```
-
----
-
-## Build Executable
-
-Install the dev dependencies (which include PyInstaller) into the virtual
-environment, then run the build script:
-
-```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-.\scripts\build_exe.ps1
+
+python -m pytest          # run the test suite
+python -m ruff check .    # lint
+python -m app.main        # run in development
+
+.\scripts\build_exe.ps1        # -> dist\TranslatorLowerThird\TranslatorLowerThird.exe
+.\scripts\build_installer.ps1  # -> dist\installer\TranslatorLowerThird-Setup.exe
 ```
 
-The script runs PyInstaller against `TranslatorLowerThird.spec` (one-folder,
-windowed — no console). Expected output:
+The PyInstaller spec (one-folder, windowed) bundles the non-obvious dependencies
+automatically: the PortAudio DLL via `sounddevice`, the Windows `keyring` backend
+and the lazily-imported providers. The installer installs per-machine under
+*Program Files*, adds Start-menu (and optional desktop) shortcuts and an
+uninstaller; user config and logs live under the user profile and are preserved
+on uninstall.
 
-```text
-dist/TranslatorLowerThird/TranslatorLowerThird.exe
-```
-
-The spec bundles the non-obvious dependencies automatically: the PortAudio DLL
-via `sounddevice`, the Windows `keyring` backend, and the lazily-imported OpenAI
-provider. If `assets/icon.ico` is present it is used as the app icon; otherwise
-PyInstaller's default icon is used and the build still succeeds.
-
-One-folder mode is used first: it is easier to debug with PySide6 and audio
-dependencies than one-file. A clean-VM launch test is recommended before each
-release.
+> Optional cloud/local provider SDKs are **not** bundled by default; install
+> `requirements-optional.txt` to use Google/Azure speech or the local models.
 
 ---
 
-## Build Installer
-
-The installer is built with [Inno Setup 6](https://jrsoftware.org/isdl.php).
-Install it first (it provides `ISCC.exe`), build the executable, then run the
-installer script:
-
-```powershell
-.\scripts\build_exe.ps1          # produces dist\TranslatorLowerThird\
-.\scripts\build_installer.ps1    # produces dist\installer\TranslatorLowerThird-Setup.exe
-```
-
-`build_installer.ps1` locates `ISCC.exe` (standard Inno Setup 6 install paths or
-`PATH`) and compiles `installer\inno_setup.iss`. It fails with a clear message
-if the PyInstaller build is missing or Inno Setup is not installed.
-
-Expected output:
+## Architecture
 
 ```text
-dist\installer\TranslatorLowerThird-Setup.exe
+Windows audio input
+        ↓
+RealtimeTranslationProvider   (or SpeechProvider + TranslationProvider)
+        ↓
+SubtitleFormatter             (anti-flicker, max 2 lines, clear-after-silence)
+        ↓
+VmixOutput                    (HTTP SetText)
+        ↓
+vMix title / lower third
 ```
 
-The installer:
+The GUI drives the pipeline but contains no provider/audio/vMix business logic.
+Details in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**; plans in
+**[docs/ROADMAP.md](docs/ROADMAP.md)**; changes in
+**[CHANGELOG.md](CHANGELOG.md)**.
 
-```text
-Installs under Program Files (per-machine, requires admin)
-Creates a Start Menu shortcut (+ uninstaller entry)
-Optional Desktop shortcut (unchecked by default)
-Includes an uninstaller
-Does NOT require Python on the target PC (all bundled by PyInstaller)
-Does NOT install virtual audio drivers
-Italian installer UI
-```
+## Configuration & logs
 
-User configuration (`%APPDATA%\TranslatorLowerThird`) and logs
-(`%LOCALAPPDATA%\TranslatorLowerThird\logs`) live under the user profile, so
-uninstalling the app leaves them untouched.
+- Config: `%APPDATA%\TranslatorLowerThird\config.yaml` (non-sensitive only)
+- Logs: `%LOCALAPPDATA%\TranslatorLowerThird\logs\` (`app.log`, `provider.log`, `vmix.log`)
+- API keys: Windows Credential Manager (never in config or logs)
 
----
+> The visible app name is "Traduttore Live"; the internal identifier
+> (`TranslatorLowerThird`) is kept stable for folders, the executable and the
+> credential service.
 
-## Configuration
+## Security
 
-User config should be stored here:
-
-```text
-%APPDATA%\TranslatorLowerThird\config.yaml
-```
-
-Logs should be stored here:
-
-```text
-%LOCALAPPDATA%\TranslatorLowerThird\logs\
-```
-
-Example non-sensitive config:
-
-```yaml
-provider: openai
-source_language: es
-target_language: it
-
-audio:
-  device_id: null
-  sample_rate: 16000
-  channels: 1
-
-vmix:
-  host: "127.0.0.1"
-  port: 8088
-  input: ""
-  selected_name: "Headline.Text"
-
-subtitles:
-  max_chars_per_line: 42
-  max_lines: 2
-  min_update_interval_ms: 1200
-  hold_seconds: 5
-  clear_after_silence_seconds: 8
-```
-
-API keys must be stored securely using Windows secure storage or an equivalent mechanism. They must not be stored inside `config.yaml`.
-
----
-
-## Security Rules
-
-Mandatory rules:
-
-```text
-Never commit API keys.
-Never log API keys.
-Never store API keys in plaintext config.
-Never save audio unless explicit debug mode is enabled.
-Never run paid live API tests by default.
-```
-
-Recommended `.gitignore` entries:
-
-```gitignore
-.env
-*.key
-*.pem
-config.local.yaml
-logs/
-dist/
-build/
-__pycache__/
-.pytest_cache/
-.ruff_cache/
-```
-
----
-
-## Testing Strategy
-
-Use `pytest`.
-
-Core tests:
-
-```text
-Config load/save
-Secret masking
-Subtitle formatting
-vMix URL construction
-vMix timeout handling
-Fake provider events
-Audio mock device list
-Audio start/stop lifecycle
-```
-
-Live provider tests must be disabled by default and only run when explicitly enabled:
-
-```text
-OPENAI_API_KEY is set
-RUN_LIVE_TESTS=1 is set
-```
-
----
-
-## First Implementation Target for Claude Code
-
-Start with:
-
-```text
-Milestone 0 — Repository Bootstrap
-Milestone 1 — Configuration and Logging
-```
-
-Do not start by implementing OpenAI.
-Do not start by implementing real audio capture.
-Do not start by implementing the full GUI.
-
-First objective:
-
-```text
-Clean repository skeleton
-Config manager
-Secure secret storage wrapper
-Logging setup
-Basic tests
-Documentation
-```
-
----
-
-## MVP Definition of Done
-
-The MVP is done when:
-
-```text
-The app launches on Windows.
-The user can select an audio input.
-Test Audio shows activity.
-The user can save an API key securely.
-The user can configure vMix host, port, input and text field.
-Test vMix writes a phrase into the title.
-START begins the translation pipeline.
-Translated text appears in GUI preview.
-Translated text appears in vMix.
-STOP shuts everything down cleanly.
-Errors are readable.
-Logs are accessible.
-PyInstaller build works.
-Inno Setup installer works.
-Core tests pass.
-```
-
----
-
-## Troubleshooting Targets
-
-The app should provide clear messages for:
-
-```text
-No audio input detected
-Wrong audio device selected
-API key missing
-API key invalid
-No internet connection
-Provider unavailable
-vMix not reachable
-Wrong vMix input name
-Wrong vMix text field
-Subtitle update failed
-```
-
-Operator-facing messages should be simple and actionable.
-
----
-
-## Future Roadmap Summary
-
-```text
-v1.0  MVP: OpenAI + vMix
-v1.1  Provider registry and provider selector
-v1.2  Google, Azure, DeepL providers
-v1.3  Local models: Faster-Whisper, MarianMT, NLLB
-v2.0  Self-hosted GPU server provider
-v2.5  Glossary, names, event profiles, SRT export
-v3.0  OBS, browser overlay, TXT/WebSocket outputs
-```
-
-See `docs/ROADMAP.md` for full details.
-
----
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md). Current version: **0.1.0** (MVP).
-
-## Troubleshooting
-
-Operator-facing guidance (Italian) is in
-[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md); the in-app **Info** button
-shows the version and the config/log paths.
+API keys are never committed, logged or stored in plaintext; audio is not written
+to disk in normal operation; live paid-API tests are opt-in (`RUN_LIVE_TESTS=1`
+with the relevant key set) and never run in the default test suite.
 
 ## License
 
-Released under the [MIT License](LICENSE). Copyright (c) 2026 Michele Dipace.
+Released under the [MIT License](LICENSE). Copyright © 2026 Michele Dipace.

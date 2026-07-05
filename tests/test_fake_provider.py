@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """FakeTranslationProvider tests (Milestone 6) — asyncio, no network."""
 

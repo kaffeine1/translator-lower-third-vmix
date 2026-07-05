@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """DeepLTranslationProvider — text translation via the DeepL REST API (v1.2).
 

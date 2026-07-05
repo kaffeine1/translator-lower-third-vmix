@@ -1,6 +1,6 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
-"""Translator Lower Third for vMix."""
+"""Traduttore Live."""
 
 __version__ = "0.1.0"
 __author__ = "Michele Dipace"

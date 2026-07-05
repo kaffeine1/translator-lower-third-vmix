@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Google/Azure SpeechProvider tests (v1.2) — fake engine, no SDK or network.
 

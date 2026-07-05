@@ -1,7 +1,7 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec — one-folder build of Translator Lower Third for vMix.
+"""PyInstaller spec — one-folder build of Traduttore Live.
 
 Builds dist/TranslatorLowerThird/TranslatorLowerThird.exe (no console).
 PySide6 is handled by the official PyInstaller hooks; here we collect the

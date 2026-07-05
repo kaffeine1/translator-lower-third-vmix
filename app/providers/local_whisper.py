@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """FasterWhisperSpeechProvider — local (offline) speech recognition (v1.3).
 

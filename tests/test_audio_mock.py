@@ -1,4 +1,4 @@
-# Translator Lower Third for vMix
+# Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Audio tests (Milestone 3): mock device list, fake chunks, lifecycle, levels.
 
