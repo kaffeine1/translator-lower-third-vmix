@@ -9,6 +9,12 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Wizard di prima configurazione rinnovato**: ora è consapevole del provider.
+  Passi: lingua + provider → credenziali dinamiche (i campi dipendono dal
+  provider scelto e vengono salvati subito in modo sicuro, così i test
+  funzionano) → verifica provider → ingresso audio → vMix → verifica vMix →
+  salva. Prima gestiva solo la chiave OpenAI e i test non usavano le credenziali
+  appena inserite.
 - **Provider locali (offline)**: `FasterWhisperSpeechProvider` (riconoscimento
   vocale locale) e `LocalMarianTranslationProvider` (traduzione locale via
   MarianMT). Registrati come pipeline "Locale (Faster-Whisper → MarianMT)" nel

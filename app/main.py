@@ -15,7 +15,7 @@ from pathlib import Path
 from app import APP_DISPLAY_NAME, APP_NAME, __version__
 from app.audio.input import SoundDeviceAudioInput
 from app.config.manager import ConfigManager
-from app.config.secrets import KeyringSecretStore, SecretStorageError
+from app.config.secrets import KeyringSecretStore
 from app.i18n import set_locale, t
 from app.logging.setup import setup_logging
 from app.services import LiveAppServices
@@ -62,9 +62,12 @@ def main() -> int:
     services = LiveAppServices(SoundDeviceAudioInput(), secret_store)
 
     if first_run:
-        wizard = FirstRunWizard(config, services.list_audio_devices(), services)
+        wizard = FirstRunWizard(
+            config, services.list_audio_devices(), services, secret_store
+        )
         if wizard.exec() == QDialog.DialogCode.Accepted:
             config = wizard.result_config()
+            set_locale(config.ui_language)  # apply the chosen interface language
             try:
                 manager.save(config)
             except OSError:
@@ -74,12 +77,8 @@ def main() -> int:
                     APP_DISPLAY_NAME,
                     t("app.config_save_failed"),
                 )
-            key = wizard.entered_api_key()
-            if key:
-                try:
-                    secret_store.set_api_key(config.provider, key)
-                except SecretStorageError as exc:
-                    QMessageBox.warning(None, APP_DISPLAY_NAME, str(exc))
+            # credentials were saved to secure storage by the wizard as the
+            # operator advanced through the pages
         # wizard cancelled: nothing saved, so it reappears on the next launch
 
     window = MainWindow(manager, config, services, secret_store)

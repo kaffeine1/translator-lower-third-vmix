@@ -57,10 +57,15 @@ from the PortAudio callback), auto-stops after 5 seconds, and reports
 "Audio rilevato" (green) or "Nessun audio in ingresso" (red) based on the
 observed peak.
 
-Dialogs (`SettingsDialog`, `FirstRunWizard`) are pure: they build an
-`AppConfig` via `result_config()` and expose the typed API key via
-`entered_api_key()`; the caller persists both. Saved API keys are never
-pre-filled into the password field.
+`SettingsDialog` builds an `AppConfig` via `result_config()` and returns the
+entered credentials per account via `entered_credentials()`; the caller
+(`MainWindow`) persists the config and writes each credential to the
+`SecretStore`. Its credential fields are dynamic — one per credential the
+selected provider declares in the registry. The provider-aware `FirstRunWizard`
+(language & provider → dynamic credentials → provider test → audio → vMix → vMix
+test → finish) saves credentials to the `SecretStore` itself as the operator
+advances (so the test steps run against real values) and returns the config via
+`result_config()`. Saved secrets are never pre-filled into the fields.
 
 ## Key Interfaces
 

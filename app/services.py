@@ -209,6 +209,10 @@ class LiveAppServices(MockAppServices):
 
         provider_id = self._config.provider
         info = get_provider_info(provider_id)
+        if provider_id == "local":
+            # no credentials, but it needs the optional heavy packages installed;
+            # report honestly instead of a false "demo ok"
+            return self._probe_local_packages()
         if info is None or not info.requires_api_key:
             return ServiceResult(True, t("service.demo_mode_no_key"))
         if self._secret_store is None:
@@ -232,6 +236,25 @@ class LiveAppServices(MockAppServices):
             return ServiceResult(True, t("service.api_connection_ok"))
         # composed cloud providers: no live check available (would need the SDKs)
         return ServiceResult(True, t("service.credentials_present"))
+
+    @staticmethod
+    def _probe_local_packages() -> ServiceResult:
+        """Check that the optional local-provider packages are importable.
+
+        The local pipeline needs no credentials, so without this check test_api
+        would report a misleading "demo ok". We only probe for the packages
+        (find_spec, no import) — the heavy models are fetched at first START.
+        """
+        import importlib.util
+
+        missing = [
+            name
+            for name in ("faster_whisper", "transformers")
+            if importlib.util.find_spec(name) is None
+        ]
+        if missing:
+            return ServiceResult(False, t("service.local_packages_missing"))
+        return ServiceResult(True, t("service.local_ready"))
 
     def start_translation(self) -> ServiceResult:
         if self._config is None:

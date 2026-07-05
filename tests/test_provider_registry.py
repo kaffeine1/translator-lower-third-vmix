@@ -167,6 +167,27 @@ def test_test_api_openai_without_key_is_error():
     assert "chiave api" in result.message.lower()
 
 
+def test_test_api_local_missing_packages_is_error(monkeypatch):
+    # the local pipeline needs no credentials: without the honest package probe
+    # test_api would report a misleading "demo ok"
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    services = _services("local", with_key=False)
+    result = services.test_api()
+    assert result.ok is False
+    assert "faster-whisper" in result.message.lower()
+
+
+def test_test_api_local_with_packages_is_ok(monkeypatch):
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    services = _services("local", with_key=False)
+    result = services.test_api()
+    assert result.ok is True
+
+
 def test_settings_dialog_provider_list_includes_demo():
     from app.gui.settings_dialog import PROVIDERS
 

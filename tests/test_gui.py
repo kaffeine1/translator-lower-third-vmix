@@ -444,17 +444,52 @@ def test_wizard_collects_config(qapp):
     wizard.host_edit.setText("127.0.0.1")
     wizard.port_spin.setValue(8088)
     wizard.input_edit.setText("Sottopancia")
-    wizard.api_key_edit.setText("sk-test-abcdefghijklmnop")
 
     config = wizard.result_config()
     assert config.vmix.input == "Sottopancia"
-    assert wizard.entered_api_key() == "sk-test-abcdefghijklmnop"
+    assert config.provider == "openai"
+    assert config.ui_language == "it"
 
 
-def test_wizard_has_six_pages(qapp):
+def test_wizard_has_seven_pages(qapp):
     services = MockAppServices()
     wizard = FirstRunWizard(AppConfig(), services.list_audio_devices(), services)
-    assert len(wizard.pageIds()) == 6
+    assert len(wizard.pageIds()) == 7
+
+
+def test_wizard_credentials_page_dynamic_and_saved(qapp):
+    services = MockAppServices()
+    store = InMemorySecretStore()
+    config = AppConfig()
+    config.provider = "google-deepl"
+    wizard = FirstRunWizard(config, services.list_audio_devices(), services, store)
+    page = wizard._credentials_page
+    page.initializePage()  # Qt calls this when the page is shown
+    assert set(page._edits) == {"google", "deepl"}
+    page._edits["google"].setText("/creds.json")
+    page._edits["deepl"].setText("dk:fx")
+    assert page.validatePage() is True
+    assert store.get_api_key("google") == "/creds.json"
+    assert store.get_api_key("deepl") == "dk:fx"
+
+
+def test_wizard_credentials_none_for_demo(qapp):
+    services = MockAppServices()
+    config = AppConfig()
+    config.provider = "fake"
+    wizard = FirstRunWizard(config, services.list_audio_devices(), services)
+    page = wizard._credentials_page
+    page.initializePage()
+    assert page._edits == {}
+    assert page.validatePage() is True  # nothing to save, still valid
+
+
+def test_wizard_provider_selection_in_result(qapp):
+    services = MockAppServices()
+    wizard = FirstRunWizard(AppConfig(), services.list_audio_devices(), services)
+    idx = wizard.provider_combo.findData("azure-deepl")
+    wizard.provider_combo.setCurrentIndex(idx)
+    assert wizard.result_config().provider == "azure-deepl"
 
 
 def test_wizard_vmix_test_uses_typed_values(qapp):
