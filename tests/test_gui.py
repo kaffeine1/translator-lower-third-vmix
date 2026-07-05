@@ -337,6 +337,31 @@ def test_settings_dialog_has_ui_language_selector(qapp):
     assert dialog.result_config().ui_language == "it"
 
 
+def test_settings_dialog_buttons_stay_outside_scroll_area(qapp):
+    # On short screens the settings must scroll while Save/Cancel stay visible:
+    # the fields live inside a QScrollArea, the buttons outside it.
+    from PySide6.QtWidgets import QDialogButtonBox, QScrollArea
+
+    dialog = SettingsDialog(AppConfig(), MockAppServices().list_audio_devices())
+
+    scroll = dialog.findChild(QScrollArea)
+    assert scroll is not None
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+
+    def _inside(widget, ancestor) -> bool:
+        node = widget.parentWidget()
+        while node is not None:
+            if node is ancestor:
+                return True
+            node = node.parentWidget()
+        return False
+
+    content = scroll.widget()
+    assert not _inside(buttons, content)  # buttons never scroll away
+    assert _inside(dialog.chars_spin, content)  # a field is inside the scroll
+
+
 def test_settings_dialog_credentials_empty_by_default(qapp):
     dialog = SettingsDialog(
         AppConfig(), MockAppServices().list_audio_devices(), saved_accounts={"openai"}

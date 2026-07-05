@@ -9,16 +9,21 @@ caller (MainWindow) that saves. This makes it testable without I/O.
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from app.audio.devices import AudioDevice
@@ -75,7 +80,17 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------ UI
 
     def _build_ui(self, devices: list[AudioDevice]) -> None:
-        layout = QVBoxLayout(self)
+        # The settings grow with dynamic credential fields and the local-provider
+        # group; on short screens they must not push the Save/Cancel buttons off
+        # the bottom. So the groups live inside a scroll area and the buttons
+        # stay outside it, always visible.
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        layout = QVBoxLayout(content)
 
         interface_box = QGroupBox(t("settings.group.interface"))
         interface_form = QFormLayout(interface_box)
@@ -167,6 +182,10 @@ class SettingsDialog(QDialog):
         subtitles_form.addRow(t("settings.label.clear_silence"), self.clear_spin)
         layout.addWidget(subtitles_box)
 
+        layout.addStretch()
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -174,7 +193,15 @@ class SettingsDialog(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(t("settings.button.cancel"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        outer.addWidget(buttons)
+
+        # Open large enough to show the content, but never taller than the screen
+        # (so the buttons below the scroll area are always reachable).
+        screen = self.screen() or QApplication.primaryScreen()
+        avail_h = screen.availableGeometry().height() if screen else 900
+        max_h = max(360, avail_h - 80)
+        self.setMaximumHeight(max_h)
+        self.resize(500, min(content.sizeHint().height() + 90, max_h))
 
     # ------------------------------------------------------------------ data
 
