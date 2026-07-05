@@ -16,10 +16,12 @@ if (-not (Test-Path $exe)) {
     throw "Build mancante: $exe non trovato. Esegui prima scripts\build_exe.ps1."
 }
 
-# Trova ISCC.exe: percorsi standard di Inno Setup 6, poi PATH.
+# Trova ISCC.exe: percorsi standard di Inno Setup 6 (per-macchina e per-utente,
+# es. installazione via winget in %LOCALAPPDATA%), poi PATH.
 $candidates = @(
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-    "C:\Program Files\Inno Setup 6\ISCC.exe"
+    "C:\Program Files\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
 )
 $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) {

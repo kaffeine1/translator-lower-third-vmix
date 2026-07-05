@@ -12,8 +12,18 @@ Build:  pyinstaller --noconfirm --clean TranslatorLowerThird.spec
 """
 
 import os
+import re
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.win32.versioninfo import (
+    FixedFileInfo,
+    StringFileInfo,
+    StringStruct,
+    StringTable,
+    VarFileInfo,
+    VarStruct,
+    VSVersionInfo,
+)
 
 # --- paths ------------------------------------------------------------------
 # SPECPATH is the spec's folder (repository root): needed because the entry
@@ -21,6 +31,33 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 ROOT = os.path.abspath(SPECPATH)  # noqa: F821 (SPECPATH injected by PyInstaller)
 ICON = os.path.join(ROOT, "assets", "icon.ico")
 icon_arg = ICON if os.path.exists(ICON) else None
+
+# --- version resource -------------------------------------------------------
+# Read __version__ from app/__init__.py so the exe's file properties stay in
+# sync with the single source of truth (no drift with the installer script).
+with open(os.path.join(ROOT, "app", "__init__.py"), encoding="utf-8") as _f:
+    _m = re.search(r'__version__\s*=\s*"([^"]+)"', _f.read())
+_vstr = _m.group(1) if _m else "0.0.0"
+_parts = [int(x) for x in _vstr.split(".")[:3]] + [0, 0, 0, 0]
+_vtuple = tuple(_parts[:4])
+
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(filevers=_vtuple, prodvers=_vtuple, mask=0x3F, flags=0x0,
+                      OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+    kids=[
+        StringFileInfo([StringTable("040904B0", [
+            StringStruct("CompanyName", "Michele Dipace"),
+            StringStruct("FileDescription", "Translator Lower Third for vMix"),
+            StringStruct("FileVersion", _vstr),
+            StringStruct("InternalName", "TranslatorLowerThird"),
+            StringStruct("LegalCopyright", "Copyright (C) 2026 Michele Dipace"),
+            StringStruct("OriginalFilename", "TranslatorLowerThird.exe"),
+            StringStruct("ProductName", "Translator Lower Third for vMix"),
+            StringStruct("ProductVersion", _vstr),
+        ])]),
+        VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
+    ],
+)
 
 # --- dependencies to collect ------------------------------------------------
 datas = []
@@ -82,6 +119,7 @@ exe = EXE(  # noqa: F821
     upx=False,
     console=False,  # GUI app: no console window
     icon=icon_arg,
+    version=version_info,  # embeds File/Product version + author in the exe
 )
 
 coll = COLLECT(  # noqa: F821

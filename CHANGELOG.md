@@ -9,6 +9,11 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Metadati di versione nei pacchetti**: l'eseguibile e l'installer ora
+  riportano versione, autore e descrizione nelle Proprietà di Windows (la
+  versione è letta da `app/__init__.py`, un'unica fonte). `build_installer.ps1`
+  trova ISCC anche quando Inno Setup è installato per-utente (es. via winget in
+  `%LOCALAPPDATA%`), oltre ai percorsi in Program Files.
 - **Wizard di prima configurazione rinnovato**: ora è consapevole del provider.
   Passi: lingua + provider → credenziali dinamiche (i campi dipendono dal
   provider scelto e vengono salvati subito in modo sicuro, così i test

@@ -6,7 +6,7 @@
 #define MyAppName "Translator Lower Third for vMix"
 #define MyAppShortName "TranslatorLowerThird"
 #define MyAppVersion "0.1.0"
-#define MyAppPublisher "Translator Lower Third"
+#define MyAppPublisher "Michele Dipace"
 #define MyAppExeName "TranslatorLowerThird.exe"
 
 [Setup]
@@ -23,6 +23,10 @@ OutputDir=..\dist\installer
 OutputBaseFilename={#MyAppShortName}-Setup
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Version/metadata stamped into Setup.exe itself (Properties tab).
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
