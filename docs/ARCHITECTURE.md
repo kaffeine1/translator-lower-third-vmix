@@ -220,8 +220,11 @@ OPUS-MT model (name derived from the language pair, overridable). Both use an
 injectable model factory (fake in tests) and lazy-import the heavy optional
 packages (`faster-whisper`, `transformers`/`torch`), raising a readable error
 if missing. They compose into the credential-free realtime pipeline
-`"local"` ("Locale (Faster-Whisper → MarianMT)") in the selector. Model/device
-default to `small`/`cpu`; exposing them in the GUI is a follow-up.
+`"local"` ("Locale (Faster-Whisper → MarianMT)") in the selector. The Whisper
+model size (`config.local_model`, default `small`) and device
+(`config.local_device`, `cpu`/`cuda`) are set in Settings and threaded to the
+provider through `create_provider(..., config)`; a hardware note in the dialog
+warns that large models want a GPU.
 
 ### Translation providers (v1.2)
 

@@ -369,6 +369,18 @@ def test_settings_dialog_dynamic_credentials_per_provider(qapp):
     assert dialog.entered_credentials() == {"deepl": "dk:fx"}
 
 
+def test_settings_dialog_local_model_and_device(qapp):
+    config = AppConfig()
+    config.local_model = "medium"
+    config.local_device = "cuda"
+    dialog = SettingsDialog(config, [])
+    assert dialog.local_model_combo.currentData() == "medium"
+    assert dialog.local_device_combo.currentData() == "cuda"
+    result = dialog.result_config()
+    assert result.local_model == "medium"
+    assert result.local_device == "cuda"
+
+
 def test_settings_dialog_demo_provider_has_no_credentials(qapp):
     config = AppConfig()
     config.provider = "fake"

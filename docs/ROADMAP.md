@@ -673,8 +673,9 @@ OpenAI realtime → vMix
 > `LocalMarianTranslationProvider` (local MT) implemented with injectable
 > model factories, lazy optional imports, and mocked tests. Registered as the
 > composed realtime pipeline "Locale (Faster-Whisper → MarianMT)" (no
-> credentials). Remaining: expose model/device settings in the GUI, a hardware
-> warning, and real end-to-end validation on a GPU machine.
+> credentials). Model/device are configurable in Settings with a hardware note.
+> Remaining: real end-to-end validation on a GPU machine, and a latency
+> benchmark tool.
 
 ### Goal
 

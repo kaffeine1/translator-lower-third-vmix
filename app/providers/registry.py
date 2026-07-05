@@ -92,10 +92,11 @@ def get_provider_info(provider_id: str) -> ProviderInfo | None:
 
 
 def create_provider(
-    provider_id: str, secret_store: SecretStore | None
+    provider_id: str, secret_store: SecretStore | None, config: object | None = None
 ) -> RealtimeTranslationProvider:
     """Instantiates the requested realtime provider. Lazy import: heavy modules
-    (OpenAI/websockets, cloud SDKs) load only if they are actually needed."""
+    (OpenAI/websockets, cloud/local SDKs) load only if they are actually needed.
+    ``config`` (an AppConfig) supplies local-provider options (model/device)."""
     if provider_id == "fake":
         from app.providers.fake import FakeTranslationProvider
 
@@ -113,7 +114,7 @@ def create_provider(
     if provider_id == "azure-deepl":
         return create_composed_provider("azure", "deepl", secret_store)
     if provider_id == "local":
-        return create_composed_provider("faster-whisper", "marian", secret_store)
+        return create_composed_provider("faster-whisper", "marian", secret_store, config)
     raise ValueError(f"Provider sconosciuto: {provider_id}")
 
 
@@ -139,7 +140,7 @@ def get_speech_provider_info(provider_id: str) -> ProviderInfo | None:
 
 
 def create_speech_provider(
-    provider_id: str, secret_store: SecretStore | None
+    provider_id: str, secret_store: SecretStore | None, config: object | None = None
 ) -> SpeechProvider:
     if provider_id == "fake-speech":
         from app.providers.composed import FakeSpeechProvider
@@ -154,23 +155,31 @@ def create_speech_provider(
 
         return AzureSpeechProvider(secret_store, "azure")
     if provider_id == "faster-whisper":
-        from app.providers.local_whisper import FasterWhisperSpeechProvider
+        from app.providers.local_whisper import (
+            DEFAULT_DEVICE,
+            DEFAULT_MODEL,
+            FasterWhisperSpeechProvider,
+        )
 
-        return FasterWhisperSpeechProvider()
+        model = getattr(config, "local_model", None) or DEFAULT_MODEL
+        device = getattr(config, "local_device", None) or DEFAULT_DEVICE
+        return FasterWhisperSpeechProvider(model=model, device=device)
     raise ValueError(f"Provider vocale sconosciuto: {provider_id}")
 
 
 def create_composed_provider(
-    speech_id: str, translation_id: str, secret_store: SecretStore | None
+    speech_id: str,
+    translation_id: str,
+    secret_store: SecretStore | None,
+    config: object | None = None,
 ) -> RealtimeTranslationProvider:
     """Builds a ComposedRealtimeProvider from a SpeechProvider and a
-    TranslationProvider (e.g. 'google' + 'deepl'). It is the programmatic way to
-    combine cloud providers; wiring it into the GUI (with multiple credentials)
-    will come in a later increment."""
+    TranslationProvider (e.g. 'google' + 'deepl', or 'faster-whisper' + 'marian').
+    ``config`` (an AppConfig) supplies local-provider options."""
     from app.providers.composed import ComposedRealtimeProvider
 
     return ComposedRealtimeProvider(
-        create_speech_provider(speech_id, secret_store),
+        create_speech_provider(speech_id, secret_store, config),
         create_translation_provider(translation_id, secret_store),
     )
 

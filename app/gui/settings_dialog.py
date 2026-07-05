@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.audio.devices import AudioDevice
-from app.config.models import AppConfig
+from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 
@@ -129,6 +129,21 @@ class SettingsDialog(QDialog):
         vmix_form.addRow(t("settings.label.vmix_field"), self.field_edit)
         layout.addWidget(vmix_box)
 
+        local_box = QGroupBox(t("settings.group.local"))
+        local_form = QFormLayout(local_box)
+        self.local_model_combo = QComboBox()
+        for size in LOCAL_MODELS:
+            self.local_model_combo.addItem(size, size)
+        self.local_device_combo = QComboBox()
+        for code in LOCAL_DEVICES:
+            self.local_device_combo.addItem(t(f"settings.device.{code}"), code)
+        local_form.addRow(t("settings.label.local_model"), self.local_model_combo)
+        local_form.addRow(t("settings.label.local_device"), self.local_device_combo)
+        note = QLabel(t("settings.local_hardware_note"))
+        note.setWordWrap(True)
+        local_form.addRow(note)
+        layout.addWidget(local_box)
+
         subtitles_box = QGroupBox(t("settings.group.subtitles"))
         subtitles_form = QFormLayout(subtitles_box)
         self.chars_spin = QSpinBox()
@@ -189,6 +204,8 @@ class SettingsDialog(QDialog):
         _select_by_data(self.lang_combo, config.ui_language)
         _select_by_data(self.provider_combo, config.provider)
         self._rebuild_credentials()  # match the selected provider
+        _select_by_data(self.local_model_combo, config.local_model)
+        _select_by_data(self.local_device_combo, config.local_device)
         _select_by_data(self.source_combo, config.source_language)
         _select_by_data(self.target_combo, config.target_language)
         _select_by_data(self.device_combo, config.audio.device_id)
@@ -207,6 +224,8 @@ class SettingsDialog(QDialog):
         config = AppConfig.from_dict(self._base_config.to_dict())
         config.ui_language = self.lang_combo.currentData()
         config.provider = self.provider_combo.currentData()
+        config.local_model = self.local_model_combo.currentData()
+        config.local_device = self.local_device_combo.currentData()
         config.source_language = self.source_combo.currentData()
         config.target_language = self.target_combo.currentData()
         config.audio.device_id = self.device_combo.currentData()

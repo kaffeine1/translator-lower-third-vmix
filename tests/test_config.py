@@ -118,7 +118,7 @@ def test_saved_yaml_never_contains_api_key(tmp_path):
     data = yaml.safe_load(text)
     assert set(data) == {
         "provider", "source_language", "target_language", "ui_language",
-        "audio", "vmix", "subtitles",
+        "local_model", "local_device", "audio", "vmix", "subtitles",
     }
 
 

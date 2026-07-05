@@ -270,3 +270,43 @@ def test_local_speech_and_translate_not_in_realtime_selector():
     ids = [info.id for info in available_providers()]
     assert "faster-whisper" not in ids
     assert "marian" not in ids
+
+
+def test_config_local_model_device_roundtrip():
+    from app.config.models import AppConfig
+
+    assert AppConfig().local_model == "small"
+    assert AppConfig().local_device == "cpu"
+    cfg = AppConfig.from_dict({"local_model": "large-v3", "local_device": "cuda"})
+    assert cfg.local_model == "large-v3"
+    assert cfg.local_device == "cuda"
+    # invalid device falls back to default; custom model name is kept
+    bad = AppConfig.from_dict({"local_model": "custom-model", "local_device": "tpu"})
+    assert bad.local_model == "custom-model"
+    assert bad.local_device == "cpu"
+
+
+def test_create_local_provider_uses_config_model_and_device():
+    from app.config.models import AppConfig
+    from app.providers.local_whisper import FasterWhisperSpeechProvider
+    from app.providers.registry import create_provider, create_speech_provider
+
+    config = AppConfig()
+    config.local_model = "medium"
+    config.local_device = "cuda"
+    speech = create_speech_provider("faster-whisper", None, config)
+    assert isinstance(speech, FasterWhisperSpeechProvider)
+    assert speech._model == "medium"
+    assert speech._device == "cuda"
+    # via the composed realtime pipeline
+    composed = create_provider("local", None, config)
+    assert composed._speech._model == "medium"
+    assert composed._speech._device == "cuda"
+
+
+def test_create_local_provider_defaults_without_config():
+    from app.providers.registry import create_speech_provider
+
+    speech = create_speech_provider("faster-whisper", None)  # no config
+    assert speech._model == "small"
+    assert speech._device == "cpu"

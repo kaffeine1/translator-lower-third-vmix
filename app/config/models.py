@@ -32,6 +32,15 @@ def _as_str(value: Any, default: str) -> str:
     return value if isinstance(value, str) else default
 
 
+def _as_choice(value: Any, default: str, choices: tuple[str, ...]) -> str:
+    return value if isinstance(value, str) and value in choices else default
+
+
+# Local (offline) provider options offered in the GUI.
+LOCAL_MODELS = ("tiny", "base", "small", "medium", "large-v3")
+LOCAL_DEVICES = ("cpu", "cuda")
+
+
 @dataclass
 class AudioConfig:
     device_id: int | str | None = None
@@ -97,6 +106,8 @@ class AppConfig:
     source_language: str = "es"
     target_language: str = "it"
     ui_language: str = "it"  # interface language (i18n); distinct from source/target
+    local_model: str = "small"  # Faster-Whisper model size (local provider)
+    local_device: str = "cpu"  # cpu | cuda (local provider)
     audio: AudioConfig = field(default_factory=AudioConfig)
     vmix: VmixConfig = field(default_factory=VmixConfig)
     subtitles: SubtitleConfig = field(default_factory=SubtitleConfig)
@@ -109,6 +120,10 @@ class AppConfig:
             source_language=_as_str(data.get("source_language"), "es"),
             target_language=_as_str(data.get("target_language"), "it"),
             ui_language=_as_str(data.get("ui_language"), "it"),
+            # local_model stays flexible (custom model names allowed); device is
+            # restricted to the known backends
+            local_model=_as_str(data.get("local_model"), "small"),
+            local_device=_as_choice(data.get("local_device"), "cpu", LOCAL_DEVICES),
             audio=AudioConfig.from_dict(data.get("audio")),
             vmix=VmixConfig.from_dict(data.get("vmix")),
             subtitles=SubtitleConfig.from_dict(data.get("subtitles")),

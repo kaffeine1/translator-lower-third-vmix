@@ -14,6 +14,8 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
   MarianMT). Registrati come pipeline "Locale (Faster-Whisper → MarianMT)" nel
   selettore, senza credenziali. Le librerie pesanti sono opzionali (import lazy,
   vedi `requirements-optional.txt`); un errore leggibile avvisa se mancano.
+  Modello (tiny/base/small/medium/large-v3) e dispositivo (CPU/GPU CUDA)
+  configurabili nelle Impostazioni, con avviso sui requisiti hardware.
 - **Pipeline cloud selezionabili dalla GUI**: le voci "Google Speech → DeepL" e
   "Azure Speech → DeepL" compaiono nel selettore Provider. Le Impostazioni ora
   mostrano **campi credenziali dinamici** in base al provider scelto (es. Azure

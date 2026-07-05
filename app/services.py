@@ -192,7 +192,7 @@ class LiveAppServices(MockAppServices):
                 ", ".join(missing),
             )
             return create_provider("fake", self._secret_store)
-        return create_provider(provider_id, self._secret_store)
+        return create_provider(provider_id, self._secret_store, self._config)
 
     def _has_key(self, provider_id: str) -> bool:
         if self._secret_store is None:
