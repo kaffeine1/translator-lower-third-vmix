@@ -7,6 +7,13 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Notice licenze di terze parti** (`THIRD_PARTY_NOTICES.md`): chiarisce le
+  dipendenze runtime, opzionali e di packaging, con nota specifica su PySide6/Qt
+  e LGPL. La build PyInstaller include ora `LICENSE` e
+  `THIRD_PARTY_NOTICES.md` nella distribuzione binaria.
+
 ## [0.2.0] — 2026-07-05
 
 Primo rilascio pubblico. Include l'architettura provider, i provider cloud e

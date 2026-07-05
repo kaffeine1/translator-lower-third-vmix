@@ -64,6 +64,12 @@ datas = []
 binaries = []
 hiddenimports = []
 
+# Keep project and third-party license notices in binary distributions.
+for _notice in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
+    _path = os.path.join(ROOT, _notice)
+    if os.path.exists(_path):
+        datas += [(_path, ".")]
+
 # icon as a data file: used at runtime for the window icon (as well as for
 # the exe icon)
 if os.path.exists(ICON):

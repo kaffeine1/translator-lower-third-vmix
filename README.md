@@ -108,6 +108,10 @@ and the lazily-imported providers. The installer installs per-machine under
 uninstaller; user config and logs live under the user profile and are preserved
 on uninstall.
 
+The binary distribution includes the project `LICENSE` and
+`THIRD_PARTY_NOTICES.md` next to the executable. PySide6/Qt is used under the
+LGPL/commercial Qt licensing model; the application code itself remains MIT.
+
 > Optional cloud/local provider SDKs are **not** bundled by default; install
 > `requirements-optional.txt` to use Google/Azure speech or the local models.
 
@@ -151,3 +155,8 @@ with the relevant key set) and never run in the default test suite.
 ## License
 
 Released under the [MIT License](LICENSE). Copyright © 2026 Michele Dipace.
+
+Third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). In particular, PySide6/Qt is a
+separate dependency used under its LGPL/commercial licensing terms and does not
+change the license of the application code.
