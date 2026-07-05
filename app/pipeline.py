@@ -145,6 +145,12 @@ class TranslationPipeline:
                 logger.exception("Errore fermando la cattura audio")
 
         if self._loop is not None:
+            # signal the stop intent synchronously first, so a socket drop during
+            # teardown is not mistaken for a lost connection (no spurious reconnect)
+            try:
+                self._provider.request_close()
+            except Exception:
+                logger.debug("request_close non supportato dal provider")
             try:
                 asyncio.run_coroutine_threadsafe(
                     self._provider.close(), self._loop

@@ -14,7 +14,18 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
   e LGPL. La build PyInstaller include ora `LICENSE` e
   `THIRD_PARTY_NOTICES.md` nella distribuzione binaria.
 
-## [0.2.0] — 2026-07-05
+### Corretto
+
+- **Provider OpenAI allineato alla Realtime Translation API attuale**: endpoint
+  `/v1/realtime/translations`, modello `gpt-realtime-translate`, audio inviato
+  come `session.input_audio_buffer.append`, lingua di uscita configurata via
+  `session.audio.output.language`, testo tradotto ricevuto da
+  `session.output_transcript.delta`/`.done` (la trascrizione sorgente
+  `session.input_transcript.delta` è solo per debug, non va in onda). La chiusura
+  invia `session.close` e attende `session.closed` o va in timeout prima di
+  chiudere il socket. L'audio è ricampionato a 24 kHz mono (con downmix dei
+  canali) come richiede la API. Correzioni di robustezza allo STOP: nessun errore
+  "connessione persa" o riconnessione spuria durante l'arresto volontario.
 
 Primo rilascio pubblico. Include l'architettura provider, i provider cloud e
 locali, la localizzazione, il wizard consapevole del provider e il packaging.

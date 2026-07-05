@@ -92,6 +92,15 @@ class RealtimeTranslationProvider(TextEventEmitter, abc.ABC):
     @abc.abstractmethod
     async def close(self) -> None: ...
 
+    def request_close(self) -> None:
+        """Synchronous hint that a close is imminent (called from the stop
+        thread before the async close() is scheduled).
+
+        Lets a provider suppress reconnection/error emission for an *intentional*
+        stop even before close() runs on the event loop. Default: no-op.
+        """
+        return None
+
 
 class SpeechProvider(TextEventEmitter, abc.ABC):
     """Streams audio chunks and emits SOURCE-language text events

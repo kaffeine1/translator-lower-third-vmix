@@ -1,65 +1,87 @@
 # Traduttore Live
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
-"""OpenAIRealtimeTranslationProvider tests (Milestone 7).
+"""OpenAIRealtimeTranslationProvider tests (Realtime Translation protocol).
 
-No real network call: the WebSocket connector is injected with a
-fake one. The live test is active ONLY with OPENAI_API_KEY and RUN_LIVE_TESTS=1.
+No real network call: the WebSocket connector is injected with a fake one. The
+live test runs ONLY with OPENAI_API_KEY and RUN_LIVE_TESTS=1.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 
+import numpy as np
 import pytest
 
 from app.config.secrets import InMemorySecretStore
 from app.providers.base import ProviderConfig
 from app.providers.openai_realtime import (
+    OPENAI_INPUT_SAMPLE_RATE,
     OpenAIProviderError,
     OpenAIRealtimeTranslationProvider,
     check_api_key,
 )
 
+_RECV_CLOSED = object()
+
 
 class FakeWebsocket:
-    """Fake WebSocket: delivers predefined messages, then blocks until it
-    is closed (like a live connection waiting)."""
+    """Fake WebSocket backed by an asyncio.Queue: delivers predefined messages,
+    then blocks on recv() until closed. With ``respond_closed`` it answers a
+    ``session.close`` request with a ``session.closed`` event (like the server)."""
 
-    def __init__(self, incoming: list[str] | None = None) -> None:
-        self._incoming = list(incoming or [])
+    def __init__(self, incoming: list[str] | None = None, respond_closed: bool = False) -> None:
+        self._queue: asyncio.Queue = asyncio.Queue()
+        for message in incoming or []:
+            self._queue.put_nowait(message)
         self.sent: list[str] = []
         self.closed = False
-        self._closed_event = asyncio.Event()
+        self._respond_closed = respond_closed
 
     async def send(self, data: str) -> None:
         if self.closed:
             raise ConnectionError("closed")
         self.sent.append(data)
+        if self._respond_closed:
+            try:
+                if json.loads(data).get("type") == "session.close":
+                    self._queue.put_nowait(json.dumps({"type": "session.closed"}))
+            except (ValueError, TypeError):
+                pass
 
     async def recv(self) -> str:
-        if self._incoming:
-            return self._incoming.pop(0)
-        await self._closed_event.wait()  # stays connected until it is closed
-        raise ConnectionError("closed")
+        item = await self._queue.get()
+        if item is _RECV_CLOSED:
+            raise ConnectionError("closed")
+        return item
 
     async def close(self) -> None:
         self.closed = True
-        self._closed_event.set()
+        self._queue.put_nowait(_RECV_CLOSED)
 
 
-def _provider(incoming=None, store=None, connector_calls=None):
+def _provider(
+    incoming=None,
+    store=None,
+    connector_calls=None,
+    respond_closed=False,
+    close_timeout_s=0.1,
+):
     store = store or InMemorySecretStore()
     store.set_api_key("openai", "sk-test-000000000000")
-    ws = FakeWebsocket(incoming)
+    ws = FakeWebsocket(incoming, respond_closed=respond_closed)
 
     async def connector(url, headers):
         if connector_calls is not None:
             connector_calls.append((url, headers))
         return ws
 
-    provider = OpenAIRealtimeTranslationProvider(store, connector=connector)
+    provider = OpenAIRealtimeTranslationProvider(
+        store, connector=connector, close_timeout_s=close_timeout_s
+    )
     return provider, ws
 
 
@@ -71,6 +93,11 @@ def _sink(provider):
     return partials, finals, errors
 
 
+def _feed(provider, **event):
+    """Deliver one JSON event to the provider's message handler."""
+    provider._handle_message(json.dumps(event))
+
+
 # ---------------------------------------------------------------- parsing
 
 
@@ -78,39 +105,35 @@ def test_handle_message_partial_and_final():
     provider, _ws = _provider()
     partials, finals, errors = _sink(provider)
 
-    provider._handle_message(json.dumps({"type": "response.created"}))
-    provider._handle_message(json.dumps({"type": "response.text.delta", "delta": "Ciao"}))
-    provider._handle_message(json.dumps({"type": "response.text.delta", "delta": " mondo"}))
-    provider._handle_message(json.dumps({"type": "response.text.done", "text": "Ciao mondo"}))
+    _feed(provider, type="session.output_transcript.delta", delta="Ciao")
+    _feed(provider, type="session.output_transcript.delta", delta=" mondo")
+    _feed(provider, type="session.output_transcript.done", transcript="Ciao mondo")
 
     assert partials == ["Ciao", "Ciao mondo"]  # incremental accumulation
     assert finals == ["Ciao mondo"]
     assert errors == []
 
 
-def test_handle_message_supports_output_text_naming():
-    provider, _ws = _provider()
-    partials, finals, _errors = _sink(provider)
-    provider._handle_message(json.dumps({"type": "response.output_text.delta", "delta": "Hola"}))
-    provider._handle_message(json.dumps({"type": "response.output_text.done", "text": "Hola"}))
-    assert partials == ["Hola"]
-    assert finals == ["Hola"]
-
-
 def test_handle_message_final_falls_back_to_buffer():
     provider, _ws = _provider()
     _partials, finals, _errors = _sink(provider)
-    provider._handle_message(json.dumps({"type": "response.text.delta", "delta": "Buonasera"}))
-    provider._handle_message(json.dumps({"type": "response.text.done"}))  # without 'text'
+    _feed(provider, type="session.output_transcript.delta", delta="Buonasera")
+    _feed(provider, type="session.output_transcript.done")  # no transcript
     assert finals == ["Buonasera"]
+
+
+def test_input_transcript_delta_is_not_forwarded():
+    # the source-language transcript is debug/future only: nothing goes to vMix
+    provider, _ws = _provider()
+    partials, finals, errors = _sink(provider)
+    _feed(provider, type="session.input_transcript.delta", delta="hola mundo")
+    assert (partials, finals, errors) == ([], [], [])
 
 
 def test_handle_message_error_maps_invalid_key():
     provider, _ws = _provider()
     _partials, _finals, errors = _sink(provider)
-    provider._handle_message(
-        json.dumps({"type": "error", "error": {"code": "invalid_api_key"}})
-    )
+    _feed(provider, type="error", error={"code": "invalid_api_key"})
     assert errors == ["API key non valida"]
 
 
@@ -124,10 +147,9 @@ def test_handle_message_ignores_non_json():
 def test_buffer_resets_between_responses():
     provider, _ws = _provider()
     partials, finals, _errors = _sink(provider)
-    provider._handle_message(json.dumps({"type": "response.text.delta", "delta": "Uno"}))
-    provider._handle_message(json.dumps({"type": "response.text.done", "text": "Uno"}))
-    provider._handle_message(json.dumps({"type": "response.created"}))
-    provider._handle_message(json.dumps({"type": "response.text.delta", "delta": "Due"}))
+    _feed(provider, type="session.output_transcript.delta", delta="Uno")
+    _feed(provider, type="session.output_transcript.done", transcript="Uno")
+    _feed(provider, type="session.output_transcript.delta", delta="Due")
     assert partials == ["Uno", "Due"]
     assert finals == ["Uno"]
 
@@ -135,19 +157,22 @@ def test_buffer_resets_between_responses():
 # ---------------------------------------------------------------- lifecycle
 
 
-def test_connect_sends_session_config_and_never_logs_key():
+def test_connect_configures_translation_session_and_never_logs_key():
     async def run():
         calls = []
         provider, ws = _provider(connector_calls=calls)
         await provider.connect(ProviderConfig(source_language="es", target_language="it"))
-        # Bearer header present but the key must not end up anywhere else
+        # translation endpoint + translate model in the URL
         url, headers = calls[0]
-        assert "model=" in url
+        assert "/v1/realtime/translations" in url
+        assert "model=gpt-realtime-translate" in url
+        # Bearer header present; the key must not leak anywhere else
         assert headers["Authorization"].startswith("Bearer ")
-        # first message sent: session configuration
+        # first message: session.update with the OUTPUT language = target
         session = json.loads(ws.sent[0])
         assert session["type"] == "session.update"
-        assert session["session"]["input_audio_format"] == "pcm16"
+        assert session["session"]["audio"]["output"]["language"] == "it"
+        assert session["session"]["audio"]["input"]["format"] == "pcm16"
         await provider.close()
         return provider, ws
 
@@ -156,10 +181,11 @@ def test_connect_sends_session_config_and_never_logs_key():
     assert provider._task is None
 
 
-def test_send_audio_encodes_base64():
+def test_send_audio_uses_session_append_and_passes_through_at_24k():
     async def run():
         provider, ws = _provider()
-        await provider.connect(ProviderConfig())
+        # already at 24 kHz mono → no resampling, bytes unchanged
+        await provider.connect(ProviderConfig(sample_rate=OPENAI_INPUT_SAMPLE_RATE))
         await provider.send_audio(b"\x01\x02\x03\x04")
         await provider.close()
         return ws
@@ -168,12 +194,53 @@ def test_send_audio_encodes_base64():
     appends = [
         json.loads(m)
         for m in ws.sent
-        if json.loads(m)["type"] == "input_audio_buffer.append"
+        if json.loads(m)["type"] == "session.input_audio_buffer.append"
     ]
     assert len(appends) == 1
-    import base64
-
     assert base64.b64decode(appends[0]["audio"]) == b"\x01\x02\x03\x04"
+
+
+def test_send_audio_resamples_16k_to_24k():
+    async def run():
+        provider, ws = _provider()
+        await provider.connect(ProviderConfig(sample_rate=16000))
+        # 160 mono int16 samples @16k -> expect 240 samples @24k (1.5x)
+        samples = np.arange(160, dtype="<i2")
+        await provider.send_audio(samples.tobytes())
+        await provider.close()
+        return ws
+
+    ws = asyncio.run(run())
+    appends = [
+        base64.b64decode(json.loads(m)["audio"])
+        for m in ws.sent
+        if json.loads(m)["type"] == "session.input_audio_buffer.append"
+    ]
+    assert len(appends) == 1
+    # 240 int16 samples = 480 bytes
+    assert len(appends[0]) == 480
+
+
+def test_send_audio_downmixes_stereo_to_mono():
+    async def run():
+        provider, ws = _provider()
+        # stereo @ 24 kHz: only down-mix (no rate change)
+        await provider.connect(ProviderConfig(sample_rate=OPENAI_INPUT_SAMPLE_RATE, channels=2))
+        stereo = np.array([100, 200, 300, 400, 500, 600, 700, 800], dtype="<i2")
+        await provider.send_audio(stereo.tobytes())
+        await provider.close()
+        return ws
+
+    ws = asyncio.run(run())
+    appends = [
+        base64.b64decode(json.loads(m)["audio"])
+        for m in ws.sent
+        if json.loads(m)["type"] == "session.input_audio_buffer.append"
+    ]
+    assert len(appends) == 1
+    mono = np.frombuffer(appends[0], dtype="<i2")
+    # (L,R) frames averaged: (100,200),(300,400),(500,600),(700,800)
+    assert list(mono) == [150, 350, 550, 750]
 
 
 def test_connect_missing_key_raises():
@@ -212,9 +279,9 @@ def test_connect_auth_failure_is_readable():
 def test_receive_loop_emits_events_end_to_end():
     async def run():
         incoming = [
-            json.dumps({"type": "session.created"}),
-            json.dumps({"type": "response.text.delta", "delta": "Ciao"}),
-            json.dumps({"type": "response.text.done", "text": "Ciao a tutti"}),
+            json.dumps({"type": "session.updated"}),
+            json.dumps({"type": "session.output_transcript.delta", "delta": "Ciao"}),
+            json.dumps({"type": "session.output_transcript.done", "transcript": "Ciao a tutti"}),
         ]
         provider, ws = _provider(incoming=incoming)
         partials, finals, _errors = _sink(provider)
@@ -228,6 +295,52 @@ def test_receive_loop_emits_events_end_to_end():
     partials, finals = asyncio.run(run())
     assert "Ciao" in partials
     assert finals == ["Ciao a tutti"]
+
+
+def test_close_sends_session_close_and_waits_for_closed():
+    async def run():
+        provider, ws = _provider(respond_closed=True, close_timeout_s=2.0)
+        await provider.connect(ProviderConfig())
+        await provider.close()
+        return provider, ws
+
+    provider, ws = asyncio.run(run())
+    sent_types = [json.loads(m)["type"] for m in ws.sent]
+    assert "session.close" in sent_types
+    assert provider._closed_ack.is_set()  # session.closed was observed
+    assert ws.closed is True
+    assert provider._task is None
+
+
+def test_close_without_ack_times_out_without_hanging():
+    async def run():
+        # server never sends session.closed: close() must still return promptly
+        provider, ws = _provider(respond_closed=False, close_timeout_s=0.05)
+        await provider.connect(ProviderConfig())
+        await provider.close()
+        return ws
+
+    ws = asyncio.run(run())
+    assert ws.closed is True
+
+
+def test_intentional_close_after_drop_has_no_connection_lost_error():
+    async def run():
+        provider, ws = _provider(close_timeout_s=2.0)
+        _partials, _finals, errors = _sink(provider)
+        await provider.connect(ProviderConfig())
+        # stop intent set synchronously, then the socket drops during teardown
+        provider.request_close()
+        await ws.close()  # recv() raises -> the loop must break, not reconnect
+        for _ in range(10):
+            await asyncio.sleep(0)
+        await provider.close()
+        return provider, errors
+
+    provider, errors = asyncio.run(run())
+    assert errors == []  # no spurious "connection lost" on an intentional stop
+    assert provider._closed_ack.is_set()  # break released the close() waiter
+    assert provider._task is None
 
 
 # ---------------------------------------------------------------- check_api_key
