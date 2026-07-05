@@ -68,6 +68,8 @@ _REGISTRY: dict[str, ProviderInfo] = {
     "azure-deepl": ProviderInfo(
         "azure-deepl", "Azure Speech → DeepL", (_CRED_AZURE, _CRED_AZURE_REGION, _CRED_DEEPL)
     ),
+    # local (offline) pipeline: no credentials, needs the optional local packages
+    "local": ProviderInfo("local", "Locale (Faster-Whisper → MarianMT)"),
 }
 
 DEFAULT_PROVIDER_ID = "openai"
@@ -110,6 +112,8 @@ def create_provider(
         return create_composed_provider("google", "deepl", secret_store)
     if provider_id == "azure-deepl":
         return create_composed_provider("azure", "deepl", secret_store)
+    if provider_id == "local":
+        return create_composed_provider("faster-whisper", "marian", secret_store)
     raise ValueError(f"Provider sconosciuto: {provider_id}")
 
 
@@ -122,6 +126,7 @@ _SPEECH_REGISTRY: dict[str, ProviderInfo] = {
     "fake-speech": ProviderInfo("fake-speech", "Demo (voce)"),
     "google": ProviderInfo("google", "Google Speech-to-Text", (_CRED_GOOGLE,)),
     "azure": ProviderInfo("azure", "Azure Speech", (_CRED_AZURE, _CRED_AZURE_REGION)),
+    "faster-whisper": ProviderInfo("faster-whisper", "Faster-Whisper (locale)"),
 }
 
 
@@ -148,6 +153,10 @@ def create_speech_provider(
         from app.providers.azure_speech import AzureSpeechProvider
 
         return AzureSpeechProvider(secret_store, "azure")
+    if provider_id == "faster-whisper":
+        from app.providers.local_whisper import FasterWhisperSpeechProvider
+
+        return FasterWhisperSpeechProvider()
     raise ValueError(f"Provider vocale sconosciuto: {provider_id}")
 
 
@@ -175,6 +184,7 @@ def create_composed_provider(
 _TRANSLATION_REGISTRY: dict[str, ProviderInfo] = {
     "fake-text": ProviderInfo("fake-text", "Demo (traduzione testo)"),
     "deepl": ProviderInfo("deepl", "DeepL", (_CRED_DEEPL,)),
+    "marian": ProviderInfo("marian", "MarianMT (locale)"),
 }
 
 
@@ -197,4 +207,8 @@ def create_translation_provider(
         from app.providers.deepl import DeepLTranslationProvider
 
         return DeepLTranslationProvider(secret_store, "deepl")
+    if provider_id == "marian":
+        from app.providers.local_translate import LocalMarianTranslationProvider
+
+        return LocalMarianTranslationProvider()
     raise ValueError(f"Provider di traduzione sconosciuto: {provider_id}")

@@ -26,3 +26,4 @@ __pycache__/
 #AGENT
 .claude/
 CLAUDE.md
+.context/

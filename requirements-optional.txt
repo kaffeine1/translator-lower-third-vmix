@@ -10,8 +10,9 @@
 azure-cognitiveservices-speech>=1.34   # AzureSpeechProvider
 google-cloud-speech>=2.21              # GoogleSpeechProvider
 
-# Provider locali (v1.3, non ancora implementati) — richiedono molto spazio e
-# idealmente una GPU NVIDIA:
-# faster-whisper>=1.0
-# transformers>=4.40
-# torch>=2.2
+# Provider locali (v1.3) — riconoscimento vocale e traduzione offline. Richiedono
+# molto spazio su disco (modelli scaricati alla prima esecuzione) e idealmente
+# una GPU NVIDIA; su CPU la latenza può essere alta.
+faster-whisper>=1.0    # FasterWhisperSpeechProvider (STT locale)
+transformers>=4.40     # LocalMarianTranslationProvider (traduzione locale)
+torch>=2.2             # backend per transformers

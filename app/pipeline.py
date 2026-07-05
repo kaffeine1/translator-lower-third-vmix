@@ -99,12 +99,17 @@ class TranslationPipeline:
             sample_rate=self._config.audio.sample_rate,
             channels=self._config.audio.channels,
         )
-        future = asyncio.run_coroutine_threadsafe(
-            self._provider.connect(provider_config), self._loop
-        )
-        future.result(timeout=10)
-
-        self._start_audio_optional()
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._provider.connect(provider_config), self._loop
+            )
+            future.result(timeout=10)
+            self._start_audio_optional()
+        except BaseException:
+            # connect failed/timed out: tear down the threads just started so a
+            # failed START does not leak the loop/tick/output workers
+            self.stop()
+            raise
 
     def _start_audio_optional(self) -> None:
         if self._audio is None:

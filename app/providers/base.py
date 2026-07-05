@@ -24,6 +24,14 @@ TextCallback = Callable[[str], None]
 ErrorCallback = Callable[[str], None]
 
 
+class ProviderError(Exception):
+    """Base for provider errors carrying an operator-readable message (Italian).
+
+    All concrete provider errors (OpenAI, DeepL, Azure, Google, local models)
+    subclass this so the service layer can surface their message to the operator
+    on START instead of a generic one."""
+
+
 @dataclass
 class ProviderConfig:
     """Non-sensitive provider settings. The API key is fetched from the

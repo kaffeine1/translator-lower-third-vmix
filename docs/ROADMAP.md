@@ -669,6 +669,13 @@ OpenAI realtime → vMix
 
 ## v1.3 — Local Provider Mode
 
+> **Started (2026-07-04):** `FasterWhisperSpeechProvider` (local STT) and
+> `LocalMarianTranslationProvider` (local MT) implemented with injectable
+> model factories, lazy optional imports, and mocked tests. Registered as the
+> composed realtime pipeline "Locale (Faster-Whisper → MarianMT)" (no
+> credentials). Remaining: expose model/device settings in the GUI, a hardware
+> warning, and real end-to-end validation on a GPU machine.
+
 ### Goal
 
 Support offline or private processing on adequate hardware.

@@ -20,14 +20,14 @@ import httpx
 
 from app.config.secrets import SecretStore
 from app.i18n import t
-from app.providers.base import ProviderConfig, TranslationProvider
+from app.providers.base import ProviderConfig, ProviderError, TranslationProvider
 
 logger = logging.getLogger("app.providers.deepl")
 
 DEFAULT_TIMEOUT_S = 5.0
 
 
-class DeepLError(Exception):
+class DeepLError(ProviderError):
     """DeepL error with an operator-readable message (Italian)."""
 
 

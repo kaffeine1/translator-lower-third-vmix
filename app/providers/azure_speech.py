@@ -19,7 +19,7 @@ from collections.abc import Callable
 
 from app.config.secrets import SecretStore
 from app.i18n import t
-from app.providers.base import ProviderConfig, SpeechProvider
+from app.providers.base import ProviderConfig, ProviderError, SpeechProvider
 
 logger = logging.getLogger("app.providers.azure")
 
@@ -41,7 +41,7 @@ def _lang(code: str) -> str:
     return f"{code}-{code.upper()}" if code else "en-US"
 
 
-class AzureSpeechError(Exception):
+class AzureSpeechError(ProviderError):
     """Azure Speech error with an operator-readable message (Italian)."""
 
 

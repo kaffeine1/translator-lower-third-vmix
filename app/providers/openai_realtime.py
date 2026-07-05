@@ -31,7 +31,11 @@ from collections.abc import Awaitable, Callable
 
 from app.config.secrets import SecretStore
 from app.i18n import t
-from app.providers.base import ProviderConfig, RealtimeTranslationProvider
+from app.providers.base import (
+    ProviderConfig,
+    ProviderError,
+    RealtimeTranslationProvider,
+)
 
 logger = logging.getLogger("app.providers.openai")
 
@@ -49,7 +53,7 @@ _TEXT_DONE_TYPES = {"response.text.done", "response.output_text.done"}
 _RESPONSE_START_TYPES = {"response.created"}
 
 
-class OpenAIProviderError(Exception):
+class OpenAIProviderError(ProviderError):
     """Provider error with an operator-readable message (Italian)."""
 
 

@@ -24,6 +24,7 @@ from app.config.models import AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
 from app.i18n import t
 from app.outputs.vmix import TEST_PHRASE, VmixError, VmixOutput
+from app.providers.base import ProviderError
 
 logger = logging.getLogger("app.services")
 
@@ -270,6 +271,12 @@ class LiveAppServices(MockAppServices):
         )
         try:
             pipeline.start()
+        except ProviderError as exc:
+            # readable provider error (e.g. missing key/package): show it to the
+            # operator instead of the generic "consult the logs" message
+            logger.warning("Avvio provider fallito: %s", type(exc).__name__)
+            vmix.close()
+            return ServiceResult(False, str(exc))
         except Exception:
             logger.exception("Avvio pipeline fallito")
             vmix.close()

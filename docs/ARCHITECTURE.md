@@ -209,6 +209,20 @@ account; empty fields leave the stored value unchanged. `test_api` runs a live
 check only for OpenAI; for composed cloud providers it verifies that all
 required credentials are present (the SDKs are not run here).
 
+### Local providers (v1.3)
+
+`FasterWhisperSpeechProvider` (`app/providers/local_whisper.py`) runs speech
+recognition offline: since Faster-Whisper has no streaming mode, its engine
+buffers PCM16 audio into `SEGMENT_SECONDS` chunks and transcribes each on a
+worker thread, emitting finals. `LocalMarianTranslationProvider`
+(`app/providers/local_translate.py`) translates text with a Hugging Face
+OPUS-MT model (name derived from the language pair, overridable). Both use an
+injectable model factory (fake in tests) and lazy-import the heavy optional
+packages (`faster-whisper`, `transformers`/`torch`), raising a readable error
+if missing. They compose into the credential-free realtime pipeline
+`"local"` ("Locale (Faster-Whisper → MarianMT)") in the selector. Model/device
+default to `small`/`cpu`; exposing them in the GUI is a follow-up.
+
 ### Translation providers (v1.2)
 
 `TranslationProvider` implementations live alongside the split above.
