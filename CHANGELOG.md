@@ -7,6 +7,11 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+## [0.2.0] — 2026-07-05
+
+Primo rilascio pubblico. Include l'architettura provider, i provider cloud e
+locali, la localizzazione, il wizard consapevole del provider e il packaging.
+
 ### Modificato
 
 - **Nome del programma semplificato in "Traduttore Live"**: cambia il nome
@@ -110,4 +115,5 @@ Prima release MVP: dall'audio dal vivo al sottopancia tradotto in vMix.
 - Non è richiesto Python sul PC dell'operatore: tutto è incluso nell'installer.
 - I driver audio virtuali (es. VB-Cable) non sono inclusi né obbligatori.
 
-[0.1.0]: https://example.invalid/translator-lower-third-vmix/releases/tag/v0.1.0
+[0.2.0]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.0
+[0.1.0]: https://github.com/kaffeine1/translator-lower-third-vmix
