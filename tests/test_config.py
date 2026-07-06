@@ -37,6 +37,39 @@ def test_default_config_values():
     assert config.subtitles.clear_after_silence_seconds == 8
 
 
+def test_overlay_config_defaults():
+    overlay = AppConfig().overlay
+    assert overlay.enabled is False
+    assert overlay.monitor == ""
+    assert overlay.font_point_size == 32
+    assert overlay.background_opacity == 160
+
+
+def test_overlay_config_roundtrip_and_tolerant_parsing():
+    config = AppConfig()
+    config.overlay.enabled = True
+    config.overlay.monitor = "\\\\.\\DISPLAY2"
+    config.overlay.font_point_size = 48
+    config.overlay.background_opacity = 200
+    assert AppConfig.from_dict(config.to_dict()) == config
+
+    # invalid/out-of-range values fall back to defaults, never crash
+    bad = AppConfig.from_dict(
+        {
+            "overlay": {
+                "enabled": "yes",
+                "font_point_size": 9999,
+                "background_opacity": -5,
+                "monitor": 123,
+            }
+        }
+    )
+    assert bad.overlay.enabled is False
+    assert bad.overlay.font_point_size == 32
+    assert bad.overlay.background_opacity == 160
+    assert bad.overlay.monitor == ""
+
+
 def test_windows_paths_contain_app_name():
     assert "TranslatorLowerThird" in str(get_config_dir())
     assert str(get_log_dir()).endswith("logs")
@@ -118,7 +151,7 @@ def test_saved_yaml_never_contains_api_key(tmp_path):
     data = yaml.safe_load(text)
     assert set(data) == {
         "provider", "source_language", "target_language", "ui_language",
-        "local_model", "local_device", "audio", "vmix", "subtitles",
+        "local_model", "local_device", "audio", "vmix", "subtitles", "overlay",
     }
 
 

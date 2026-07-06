@@ -3,6 +3,11 @@
 # ti serve; i moduli relativi usano import lazy e restituiscono un errore
 # leggibile se il pacchetto manca.
 
+# Cattura audio dell'uscita di sistema (WASAPI loopback su Windows): permette di
+# tradurre l'audio riprodotto dal PC (es. un video YouTube). Senza questo, il
+# menu "Ingresso audio" mostra solo microfoni/line-in.
+soundcard>=0.4.3
+
 # Provider di traduzione cloud
 #   DeepL usa solo httpx (già in requirements.txt): nessuna dipendenza extra.
 

@@ -268,3 +268,30 @@ def test_after_reset_same_text_publishes_again():
     formatter.reset()
     formatter.feed_final("Ciao")
     assert published == ["Ciao", "Ciao"]
+
+
+# ---------------------------------------------------------------- live config update
+
+
+def test_update_config_rerenders_on_air_text_live():
+    # changing max lines/chars while running re-renders the current text at once
+    cfg = SubtitleConfig(max_chars_per_line=42, max_lines=2, min_update_interval_ms=0)
+    formatter, published, _clock = _formatter(cfg)
+    formatter.feed_final("uno due tre quattro cinque sei")
+    assert published[-1] == "uno due tre quattro cinque sei"  # one line at 42 chars
+
+    formatter.update_config(
+        SubtitleConfig(max_chars_per_line=10, max_lines=1, min_update_interval_ms=0)
+    )
+    # re-published immediately with the new rules: last 10-char line kept
+    assert published[-1] == "cinque sei"
+
+
+def test_update_config_partials_use_new_rules():
+    cfg = SubtitleConfig(max_chars_per_line=42, max_lines=2, min_update_interval_ms=0)
+    formatter, published, _clock = _formatter(cfg)
+    formatter.update_config(
+        SubtitleConfig(max_chars_per_line=8, max_lines=1, min_update_interval_ms=0)
+    )
+    formatter.feed_partial("alfa beta gamma")
+    assert all(len(line) <= 8 for line in published[-1].split("\n"))

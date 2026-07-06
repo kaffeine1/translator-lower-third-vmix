@@ -21,12 +21,14 @@ class AudioInputError(Exception):
 @dataclass
 class AudioDevice:
     id: int | str
-    """Stable identifier to persist in config (normalized name)."""
+    """Stable identifier to persist in config (normalized name, or loopback id)."""
     name: str
     channels: int
     default: bool = False
     index: int | None = None
     """Current PortAudio index: volatile, never to be saved."""
+    loopback: bool = False
+    """True for a system-output (WASAPI loopback) capture device."""
 
 
 def list_input_devices() -> list[AudioDevice]:

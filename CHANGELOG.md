@@ -5,30 +5,51 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [0.2.0] — 2026-07-06
+
+Primo rilascio pubblico. Traduzione dal vivo dell'audio verso un sottopancia
+vMix e/o sottotitoli a schermo, con provider OpenAI/cloud/locali, cattura
+dell'audio di sistema, localizzazione, wizard consapevole del provider e
+packaging (installer).
 
 ### Aggiunto
 
-- **Notice licenze di terze parti** (`THIRD_PARTY_NOTICES.md`): chiarisce le
-  dipendenze runtime, opzionali e di packaging, con nota specifica su PySide6/Qt
-  e LGPL. La build PyInstaller include ora `LICENSE` e
-  `THIRD_PARTY_NOTICES.md` nella distribuzione binaria.
+- **Sottotitoli a schermo (overlay)**: finestra translucida, sempre in primo
+  piano e click-through, che mostra il sottotitolo tradotto (testo bianco su
+  sfondo grigio trasparente) sul monitor scelto — utile per il pubblico su un
+  secondo schermo o proiettore. Interruttore rapido nella finestra principale e
+  impostazioni per monitor, dimensione testo e opacità. Rispetta il numero di
+  righe configurato e rimpicciolisce automaticamente il font per farle stare,
+  invece di andare a capo.
+- **Cattura dell'audio di sistema (loopback WASAPI)**: si può scegliere "Uscita
+  di sistema (loopback)" come ingresso e tradurre l'audio riprodotto dal PC (es.
+  un video). Richiede il componente opzionale `soundcard`
+  (`requirements-optional.txt`); senza, il menu mostra solo microfoni/line-in.
+- **Impostazioni sottotitoli in tempo reale**: cambiare max righe/caratteri e i
+  tempi si applica subito alla traduzione in corso, senza fermare e riavviare.
+- **Diagnostica di crash**: `faulthandler` scrive lo stack di un eventuale crash
+  nativo in `logs\crash.log` e le eccezioni non gestite finiscono nei log.
+- **Notice licenze di terze parti** (`THIRD_PARTY_NOTICES.md`): dipendenze
+  runtime, opzionali e di packaging, con nota su PySide6/Qt e LGPL. La build
+  PyInstaller include `LICENSE` e `THIRD_PARTY_NOTICES.md`.
 
 ### Corretto
 
-- **Provider OpenAI allineato alla Realtime Translation API attuale**: endpoint
+- **Provider OpenAI allineato alla Realtime Translation API (GA)**: endpoint
   `/v1/realtime/translations`, modello `gpt-realtime-translate`, audio inviato
-  come `session.input_audio_buffer.append`, lingua di uscita configurata via
-  `session.audio.output.language`, testo tradotto ricevuto da
-  `session.output_transcript.delta`/`.done` (la trascrizione sorgente
-  `session.input_transcript.delta` è solo per debug, non va in onda). La chiusura
-  invia `session.close` e attende `session.closed` o va in timeout prima di
-  chiudere il socket. L'audio è ricampionato a 24 kHz mono (con downmix dei
-  canali) come richiede la API. Correzioni di robustezza allo STOP: nessun errore
-  "connessione persa" o riconnessione spuria durante l'arresto volontario.
-
-Primo rilascio pubblico. Include l'architettura provider, i provider cloud e
-locali, la localizzazione, il wizard consapevole del provider e il packaging.
+  come `session.input_audio_buffer.append` (PCM16 24 kHz, con ricampionamento e
+  downmix a mono). `session.update` configura **solo** `audio.output.language`:
+  senza l'header beta e senza `input.format`, che l'API rifiutava con
+  `beta_api_shape_disabled` chiudendo la sessione. Il testo tradotto arriva come
+  delta append-only di `session.output_transcript.delta` (buffer con reset dopo
+  silenzio e limite di lunghezza).
+- **STOP ora ferma davvero la traduzione**: la chiusura del provider non si
+  blocca più sull'handshake di chiusura del WebSocket (che poteva durare ~10 s e
+  impedire l'arresto del loop, lasciando la traduzione attiva fino alla chiusura
+  dell'app).
+- **Semafori di stato**: salvando le Impostazioni si azzera a giallo solo il
+  semaforo la cui configurazione è cambiata (Audio/API/vMix); modificare i
+  sottotitoli o l'overlay non invalida più i risultati dei test già verdi.
 
 ### Modificato
 

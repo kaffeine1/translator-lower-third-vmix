@@ -32,6 +32,10 @@ def _as_str(value: Any, default: str) -> str:
     return value if isinstance(value, str) else default
 
 
+def _as_bool(value: Any, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
 def _as_choice(value: Any, default: str, choices: tuple[str, ...]) -> str:
     return value if isinstance(value, str) and value in choices else default
 
@@ -101,6 +105,30 @@ class SubtitleConfig:
 
 
 @dataclass
+class OverlayConfig:
+    """On-screen subtitle overlay (a translucent caption on a chosen monitor)."""
+
+    enabled: bool = False
+    monitor: str = ""  # QScreen.name(); empty = primary screen
+    font_point_size: int = 32
+    background_opacity: int = 160  # alpha 0-255 of the grey caption box
+
+    @classmethod
+    def from_dict(cls, data: Any) -> OverlayConfig:
+        data = _as_dict(data)
+        return cls(
+            enabled=_as_bool(data.get("enabled"), False),
+            monitor=_as_str(data.get("monitor"), ""),
+            font_point_size=_as_int(
+                data.get("font_point_size"), 32, minimum=8, maximum=200
+            ),
+            background_opacity=_as_int(
+                data.get("background_opacity"), 160, minimum=0, maximum=255
+            ),
+        )
+
+
+@dataclass
 class AppConfig:
     provider: str = "openai"
     source_language: str = "es"
@@ -111,6 +139,7 @@ class AppConfig:
     audio: AudioConfig = field(default_factory=AudioConfig)
     vmix: VmixConfig = field(default_factory=VmixConfig)
     subtitles: SubtitleConfig = field(default_factory=SubtitleConfig)
+    overlay: OverlayConfig = field(default_factory=OverlayConfig)
 
     @classmethod
     def from_dict(cls, data: Any) -> AppConfig:
@@ -127,6 +156,7 @@ class AppConfig:
             audio=AudioConfig.from_dict(data.get("audio")),
             vmix=VmixConfig.from_dict(data.get("vmix")),
             subtitles=SubtitleConfig.from_dict(data.get("subtitles")),
+            overlay=OverlayConfig.from_dict(data.get("overlay")),
         )
 
     def to_dict(self) -> dict:

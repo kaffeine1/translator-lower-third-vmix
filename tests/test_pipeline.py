@@ -146,3 +146,42 @@ def test_pipeline_double_start_is_safe():
     finally:
         pipeline.stop()
     pipeline.stop()  # second stop ignored
+
+
+# ---------------------------------------------------------------- live subtitle config
+
+
+def test_update_subtitle_config_applies_to_formatter_live():
+    from app.config.models import SubtitleConfig
+
+    provider = FakeTranslationProvider(script=[], loop=False)
+    pipeline = TranslationPipeline(
+        provider, AppConfig(), on_subtitle=lambda _t: None, output_publish=lambda _t: None
+    )
+    new_sub = SubtitleConfig(max_chars_per_line=20, max_lines=1)
+    pipeline.update_subtitle_config(new_sub)
+    assert pipeline._formatter._config is new_sub
+    assert pipeline._config.subtitles is new_sub
+
+
+def test_live_services_update_config_propagates_subtitles_to_running_pipeline():
+    from app.audio.input import FakeAudioInput
+    from app.config.secrets import InMemorySecretStore
+    from app.services import LiveAppServices
+
+    services = LiveAppServices(FakeAudioInput(), InMemorySecretStore())
+    calls = []
+
+    class _StubPipeline:
+        def update_subtitle_config(self, sub):
+            calls.append(sub)
+
+    services._pipeline = _StubPipeline()
+    config = AppConfig()
+    config.subtitles.max_lines = 1
+    services.update_config(config)
+    assert calls == [config.subtitles]
+
+    # no running pipeline: update_config must not raise
+    services._pipeline = None
+    services.update_config(AppConfig())

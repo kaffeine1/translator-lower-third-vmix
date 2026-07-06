@@ -168,6 +168,14 @@ class LiveAppServices(MockAppServices):
         self._pipeline = None
         self._vmix: VmixOutput | None = None
 
+    def update_config(self, config: AppConfig) -> None:
+        super().update_config(config)
+        # subtitle formatting is applied live: changing lines/chars/timings
+        # updates a running translation without a stop/start. Provider, audio
+        # and vMix changes still take effect on the next START.
+        if self._pipeline is not None:
+            self._pipeline.update_subtitle_config(config.subtitles)
+
     def _make_provider(self):
         """Translation provider in use, chosen from the registry based on
         config.provider. If the provider requires an API key but none is

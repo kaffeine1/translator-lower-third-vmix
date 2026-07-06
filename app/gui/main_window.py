@@ -37,6 +37,7 @@ from app.config.manager import ConfigManager, get_log_dir
 from app.config.models import AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
 from app.gui.settings_dialog import SettingsDialog
+from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
 from app.gui.widgets import AudioLevelMeter, StatusLight, StatusState, SubtitlePreview
 from app.i18n import t
 from app.services import AppServices, ServiceResult
@@ -82,9 +83,12 @@ class MainWindow(QMainWindow):
         self._audio_test_timer.setSingleShot(True)
         self._audio_test_timer.setInterval(AUDIO_TEST_DURATION_MS)
 
+        self._overlay: SubtitleOverlay | None = None
+
         self.setWindowTitle(APP_DISPLAY_NAME)
         self._build_ui()
         self._wire()
+        self._setup_overlay()
 
     # ------------------------------------------------------------------ UI
 
@@ -150,6 +154,12 @@ class MainWindow(QMainWindow):
         tools_row.addWidget(self.btn_info)
         layout.addLayout(tools_row)
 
+        # on-screen subtitle overlay: a checkable toggle for quick show/hide
+        self.btn_overlay = QPushButton(t("gui.btn_overlay"))
+        self.btn_overlay.setObjectName("btn_overlay")
+        self.btn_overlay.setCheckable(True)
+        layout.addWidget(self.btn_overlay)
+
         self.setCentralWidget(central)
         self.statusBar().showMessage(t("gui.status_ready"))
 
@@ -169,6 +179,7 @@ class MainWindow(QMainWindow):
         self.audio_level.connect(self._on_audio_level)
         self._audio_test_timer.timeout.connect(self._finish_audio_test)
         self._service_done.connect(self._on_service_done)
+        self.btn_overlay.toggled.connect(self._on_overlay_toggled)
         self._services.update_config(self._config)
 
     # ------------------------------------------------------------------ slot
@@ -269,6 +280,7 @@ class MainWindow(QMainWindow):
 
     def _apply_settings(self, new_config: AppConfig, credentials: dict[str, str]) -> bool:
         """Persists config and any entered credentials, showing errors clearly."""
+        old_config = self._config
         try:
             self._manager.save(new_config)
         except OSError:
@@ -281,20 +293,70 @@ class MainWindow(QMainWindow):
             return False
         self._config = new_config
         self._services.update_config(new_config)
-        # config changed: previous test results are no longer valid
-        for light in (self.audio_light, self.api_light, self.vmix_light):
-            light.set_state(StatusState.YELLOW)
+        # invalidate ONLY the status lights whose settings actually changed, so
+        # editing subtitles/overlay does not wipe a green Audio/API/vMix result
+        if old_config is None or old_config.audio.device_id != new_config.audio.device_id:
+            self.audio_light.set_state(StatusState.YELLOW)
+        if old_config is None or old_config.provider != new_config.provider or credentials:
+            self.api_light.set_state(StatusState.YELLOW)
+        if old_config is None or old_config.vmix != new_config.vmix:
+            self.vmix_light.set_state(StatusState.YELLOW)
         for account, value in credentials.items():
             try:
                 self._secret_store.set_api_key(account, value)
             except SecretStorageError as exc:
                 QMessageBox.warning(self, t("gui.settings_title"), str(exc))
                 return False
+        # overlay settings may have changed (monitor/font/opacity/enabled)
+        self._sync_overlay_button()
+        self._apply_overlay_state()
         self.statusBar().showMessage(t("gui.settings_saved"), 5000)
         return True
 
+    # ------------------------------------------------------------------ overlay
+
+    def _setup_overlay(self) -> None:
+        self._overlay = SubtitleOverlay(self)
+        # feed it the same published subtitle text as the preview
+        self.subtitle_received.connect(self._overlay.set_text)
+        self._sync_overlay_button()
+        self._apply_overlay_state()
+
+    def _apply_overlay_state(self) -> None:
+        """Apply style + monitor and show/hide the overlay from the config."""
+        if self._overlay is None:
+            return
+        overlay_cfg = self._config.overlay
+        try:
+            self._overlay.apply_config(
+                font_point_size=overlay_cfg.font_point_size,
+                background_opacity=overlay_cfg.background_opacity,
+            )
+            if overlay_cfg.enabled:
+                self._overlay.show_on(screen_by_name(overlay_cfg.monitor))
+            else:
+                self._overlay.hide()
+        except Exception:
+            logger.exception("Errore applicando l'overlay sottotitoli")
+
+    def _sync_overlay_button(self) -> None:
+        # reflect config on the toggle without re-triggering the toggled slot
+        self.btn_overlay.blockSignals(True)
+        self.btn_overlay.setChecked(self._config.overlay.enabled)
+        self.btn_overlay.blockSignals(False)
+
+    def _on_overlay_toggled(self, checked: bool) -> None:
+        self._config.overlay.enabled = checked
+        try:
+            self._manager.save(self._config)
+        except OSError:
+            logger.exception("Salvataggio stato overlay fallito")
+        self._apply_overlay_state()
+
     def closeEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
         self._closing = True
+        if self._overlay is not None:
+            self._overlay.close()
         if self._audio_monitoring:
             self._finish_audio_test()
         # translation running: stop it to avoid leaving dangling threads

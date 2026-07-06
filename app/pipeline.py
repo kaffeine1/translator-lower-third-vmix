@@ -25,7 +25,7 @@ import threading
 from collections.abc import Callable
 
 from app.audio.input import AudioInput
-from app.config.models import AppConfig
+from app.config.models import AppConfig, SubtitleConfig
 from app.providers.base import ProviderConfig, RealtimeTranslationProvider
 from app.subtitles.formatter import SubtitleFormatter
 
@@ -111,6 +111,12 @@ class TranslationPipeline:
             self.stop()
             raise
 
+    def update_subtitle_config(self, subtitles: SubtitleConfig) -> None:
+        """Apply subtitle formatting changes (lines/chars/timings) to the
+        running pipeline live, without stopping the translation."""
+        self._config.subtitles = subtitles
+        self._formatter.update_config(subtitles)
+
     def _start_audio_optional(self) -> None:
         if self._audio is None:
             return
@@ -162,7 +168,12 @@ class TranslationPipeline:
         if self._loop_thread is not None:
             self._loop_thread.join(timeout=5)
         if self._loop is not None:
-            self._loop.close()
+            # never close a still-running loop (it would raise): only if the
+            # thread really stopped. is_running() guards the rare hung-close case.
+            if self._loop.is_running():
+                logger.warning("Loop del provider ancora attivo dopo lo stop")
+            else:
+                self._loop.close()
             self._loop = None
 
         if self._tick_thread is not None:

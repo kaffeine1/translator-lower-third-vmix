@@ -12,6 +12,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
+from app.gui.subtitle_overlay import available_monitors
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 
@@ -184,6 +186,34 @@ class SettingsDialog(QDialog):
         subtitles_form.addRow(t("settings.label.clear_silence"), self.clear_spin)
         layout.addWidget(subtitles_box)
 
+        overlay_box = QGroupBox(t("settings.group.overlay"))
+        overlay_form = QFormLayout(overlay_box)
+        self.overlay_enabled_check = QCheckBox(t("settings.overlay.enabled_text"))
+        self.overlay_monitor_combo = QComboBox()
+        for mon in available_monitors():
+            suffix = t("settings.overlay.primary_suffix") if mon.primary else ""
+            label = t(
+                "settings.overlay.monitor_item",
+                n=mon.index + 1,
+                w=mon.width,
+                h=mon.height,
+                suffix=suffix,
+            )
+            self.overlay_monitor_combo.addItem(label, mon.name)
+        self.overlay_font_spin = QSpinBox()
+        self.overlay_font_spin.setRange(8, 200)
+        self.overlay_font_spin.setSuffix(" pt")
+        self.overlay_opacity_spin = QSpinBox()
+        self.overlay_opacity_spin.setRange(0, 255)
+        overlay_form.addRow(t("settings.label.overlay_enabled"), self.overlay_enabled_check)
+        overlay_form.addRow(t("settings.label.overlay_monitor"), self.overlay_monitor_combo)
+        overlay_form.addRow(t("settings.label.overlay_font"), self.overlay_font_spin)
+        overlay_form.addRow(t("settings.label.overlay_opacity"), self.overlay_opacity_spin)
+        overlay_note = QLabel(t("settings.overlay.note"))
+        overlay_note.setWordWrap(True)
+        overlay_form.addRow(overlay_note)
+        layout.addWidget(overlay_box)
+
         layout.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
@@ -254,7 +284,22 @@ class SettingsDialog(QDialog):
         self.interval_spin.setValue(config.subtitles.min_update_interval_ms)
         self.hold_spin.setValue(config.subtitles.hold_seconds)
         self.clear_spin.setValue(config.subtitles.clear_after_silence_seconds)
+        self.overlay_enabled_check.setChecked(config.overlay.enabled)
+        self._select_overlay_monitor(config.overlay.monitor)
+        self.overlay_font_spin.setValue(config.overlay.font_point_size)
+        self.overlay_opacity_spin.setValue(config.overlay.background_opacity)
         self._base_config = config
+
+    def _select_overlay_monitor(self, name: str) -> None:
+        # match the saved screen; empty or disconnected -> primary (else first)
+        index = self.overlay_monitor_combo.findData(name) if name else -1
+        if index < 0:
+            index = next(
+                (m.index for m in available_monitors() if m.primary), 0
+            )
+        self.overlay_monitor_combo.setCurrentIndex(
+            index if index < self.overlay_monitor_combo.count() else 0
+        )
 
     def result_config(self) -> AppConfig:
         config = AppConfig.from_dict(self._base_config.to_dict())
@@ -274,6 +319,10 @@ class SettingsDialog(QDialog):
         config.subtitles.min_update_interval_ms = self.interval_spin.value()
         config.subtitles.hold_seconds = self.hold_spin.value()
         config.subtitles.clear_after_silence_seconds = self.clear_spin.value()
+        config.overlay.enabled = self.overlay_enabled_check.isChecked()
+        config.overlay.monitor = self.overlay_monitor_combo.currentData() or ""
+        config.overlay.font_point_size = self.overlay_font_spin.value()
+        config.overlay.background_opacity = self.overlay_opacity_spin.value()
         return config
 
     def entered_credentials(self) -> dict[str, str]:

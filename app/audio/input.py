@@ -137,6 +137,53 @@ class SoundDeviceAudioInput(AudioInput):
         return self._stream is not None and bool(self._stream.active)
 
 
+class SystemAudioInput(AudioInput):
+    """Audio input that offers both microphones/line-in (sounddevice) and system
+    output capture (WASAPI loopback via soundcard).
+
+    The dropdown lists real inputs plus any loopback outputs; start() routes to
+    the right backend based on the selected device. Loopback is optional: if the
+    ``soundcard`` library is missing, only the real inputs are listed.
+    """
+
+    def __init__(
+        self, mic_input: AudioInput | None = None, loopback: AudioInput | None = None
+    ) -> None:
+        self._mic = mic_input or SoundDeviceAudioInput()
+        if loopback is None:
+            from app.audio.loopback import SoundcardLoopbackCapture
+
+            loopback = SoundcardLoopbackCapture()
+        self._loopback = loopback
+        self._active: AudioInput | None = None
+
+    def list_devices(self) -> list[AudioDevice]:
+        return self._mic.list_devices() + self._loopback.list_devices()
+
+    def start(
+        self,
+        device_id: int | str | None,
+        sample_rate: int,
+        channels: int,
+        on_chunk: ChunkCallback,
+    ) -> None:
+        if self._active is not None:
+            self.stop()
+        if getattr(self._loopback, "has_device", lambda _id: False)(device_id):
+            self._active = self._loopback
+        else:
+            self._active = self._mic
+        self._active.start(device_id, sample_rate, channels, on_chunk)
+
+    def stop(self) -> None:
+        active, self._active = self._active, None
+        if active is not None:
+            active.stop()
+
+    def is_running(self) -> bool:
+        return self._active is not None and self._active.is_running()
+
+
 class FakeAudioInput(AudioInput):
     """Fake implementation for tests and demos: chunks injected via feed().
 

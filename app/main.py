@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from app import APP_DISPLAY_NAME, APP_NAME, __version__
-from app.audio.input import SoundDeviceAudioInput
+from app.audio.input import SystemAudioInput
 from app.config.manager import ConfigManager
 from app.config.secrets import KeyringSecretStore
 from app.i18n import set_locale, t
@@ -31,8 +31,38 @@ def _icon_path() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def _install_crash_diagnostics() -> None:
+    """Capture the Python stack of native crashes and uncaught exceptions.
+
+    PySide6 6.x can abort the process on a native fault or an unhandled slot
+    exception with no console (pythonw). faulthandler writes the faulting stack
+    of every thread to crash.log, and the excepthook logs uncaught exceptions,
+    so a crash leaves a readable trace instead of vanishing.
+    """
+    import faulthandler
+
+    from app.config.manager import get_log_dir
+
+    try:
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        # kept open for the whole process lifetime (faulthandler writes on fault)
+        crash_file = open(log_dir / "crash.log", "a", encoding="utf-8")  # noqa: SIM115
+        faulthandler.enable(file=crash_file, all_threads=True)
+    except Exception:
+        logging.getLogger("app.main").warning("faulthandler non attivabile")
+
+    def _log_uncaught(exc_type, exc, tb) -> None:
+        logging.getLogger("app.main").critical(
+            "Eccezione non gestita", exc_info=(exc_type, exc, tb)
+        )
+
+    sys.excepthook = _log_uncaught
+
+
 def main() -> int:
     setup_logging()
+    _install_crash_diagnostics()
     logger = logging.getLogger("app.main")
     logger.info("%s v%s avviato", APP_DISPLAY_NAME, __version__)
 
@@ -59,7 +89,9 @@ def main() -> int:
     # Real audio (M3), vMix (M4) and OpenAI provider (M7); without a saved key
     # the provider falls back to the fake demo
     secret_store = KeyringSecretStore()
-    services = LiveAppServices(SoundDeviceAudioInput(), secret_store)
+    # SystemAudioInput = microphones/line-in (sounddevice) + system output capture
+    # (WASAPI loopback via the optional 'soundcard' library, if installed)
+    services = LiveAppServices(SystemAudioInput(), secret_store)
 
     if first_run:
         wizard = FirstRunWizard(

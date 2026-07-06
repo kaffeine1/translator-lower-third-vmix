@@ -101,25 +101,42 @@ def _feed(provider, **event):
 # ---------------------------------------------------------------- parsing
 
 
-def test_handle_message_partial_and_final():
+def test_output_transcript_deltas_accumulate_as_partials():
+    # translated transcript arrives as append-only deltas (no "done" event):
+    # they accumulate into a rolling caption emitted as partials.
     provider, _ws = _provider()
     partials, finals, errors = _sink(provider)
 
     _feed(provider, type="session.output_transcript.delta", delta="Ciao")
     _feed(provider, type="session.output_transcript.delta", delta=" mondo")
-    _feed(provider, type="session.output_transcript.done", transcript="Ciao mondo")
 
     assert partials == ["Ciao", "Ciao mondo"]  # incremental accumulation
-    assert finals == ["Ciao mondo"]
+    assert finals == []  # continuous translation: no finals
     assert errors == []
 
 
-def test_handle_message_final_falls_back_to_buffer():
+def test_output_transcript_resets_after_silence(monkeypatch):
+    import app.providers.openai_realtime as mod
+
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(mod.time, "monotonic", lambda: clock["t"])
     provider, _ws = _provider()
-    _partials, finals, _errors = _sink(provider)
-    _feed(provider, type="session.output_transcript.delta", delta="Buonasera")
-    _feed(provider, type="session.output_transcript.done")  # no transcript
-    assert finals == ["Buonasera"]
+    partials, _finals, _errors = _sink(provider)
+
+    _feed(provider, type="session.output_transcript.delta", delta="Prima frase")
+    clock["t"] += mod.TRANSCRIPT_RESET_S + 1.0  # silence gap -> fresh caption
+    _feed(provider, type="session.output_transcript.delta", delta="Seconda")
+
+    assert partials[-1] == "Seconda"  # buffer reset, not "Prima fraseSeconda"
+
+
+def test_output_transcript_buffer_is_capped():
+    import app.providers.openai_realtime as mod
+
+    provider, _ws = _provider()
+    partials, _finals, _errors = _sink(provider)
+    _feed(provider, type="session.output_transcript.delta", delta="x" * 1000)
+    assert len(partials[-1]) == mod.MAX_TRANSCRIPT_CHARS
 
 
 def test_input_transcript_delta_is_not_forwarded():
@@ -144,16 +161,6 @@ def test_handle_message_ignores_non_json():
     assert (partials, finals, errors) == ([], [], [])
 
 
-def test_buffer_resets_between_responses():
-    provider, _ws = _provider()
-    partials, finals, _errors = _sink(provider)
-    _feed(provider, type="session.output_transcript.delta", delta="Uno")
-    _feed(provider, type="session.output_transcript.done", transcript="Uno")
-    _feed(provider, type="session.output_transcript.delta", delta="Due")
-    assert partials == ["Uno", "Due"]
-    assert finals == ["Uno"]
-
-
 # ---------------------------------------------------------------- lifecycle
 
 
@@ -166,13 +173,15 @@ def test_connect_configures_translation_session_and_never_logs_key():
         url, headers = calls[0]
         assert "/v1/realtime/translations" in url
         assert "model=gpt-realtime-translate" in url
-        # Bearer header present; the key must not leak anywhere else
+        # Bearer header present; no beta header (GA shape); key never leaks
         assert headers["Authorization"].startswith("Bearer ")
-        # first message: session.update with the OUTPUT language = target
+        assert "OpenAI-Beta" not in headers
+        # first message: session.update with ONLY the OUTPUT language (GA shape;
+        # an input.format field would get the session rejected as beta)
         session = json.loads(ws.sent[0])
         assert session["type"] == "session.update"
         assert session["session"]["audio"]["output"]["language"] == "it"
-        assert session["session"]["audio"]["input"]["format"] == "pcm16"
+        assert "input" not in session["session"]["audio"]
         await provider.close()
         return provider, ws
 
@@ -281,7 +290,7 @@ def test_receive_loop_emits_events_end_to_end():
         incoming = [
             json.dumps({"type": "session.updated"}),
             json.dumps({"type": "session.output_transcript.delta", "delta": "Ciao"}),
-            json.dumps({"type": "session.output_transcript.done", "transcript": "Ciao a tutti"}),
+            json.dumps({"type": "session.output_transcript.delta", "delta": " a tutti"}),
         ]
         provider, ws = _provider(incoming=incoming)
         partials, finals, _errors = _sink(provider)
@@ -293,8 +302,8 @@ def test_receive_loop_emits_events_end_to_end():
         return partials, finals
 
     partials, finals = asyncio.run(run())
-    assert "Ciao" in partials
-    assert finals == ["Ciao a tutti"]
+    assert partials[-1] == "Ciao a tutti"  # deltas accumulated into the caption
+    assert finals == []
 
 
 def test_close_sends_session_close_and_waits_for_closed():

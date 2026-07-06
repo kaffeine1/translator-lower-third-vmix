@@ -34,6 +34,7 @@ import asyncio
 import base64
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 
 import numpy as np
@@ -54,20 +55,27 @@ DEFAULT_REALTIME_MODEL = "gpt-realtime-translate"
 # at a lower rate, so audio is resampled here before being sent.
 OPENAI_INPUT_SAMPLE_RATE = 24000
 MAX_BACKOFF_S = 30.0
-# Strictly below the pipeline's outer close budget (pipeline.stop() waits 5 s on
-# close()): so close() always returns before that outer timeout can fire.
-DEFAULT_CLOSE_TIMEOUT_S = 3.0
+# How long close() waits for session.closed before forcing the socket shut.
+# Kept well below the pipeline's 5 s outer budget (close() also bounds ws.close
+# to ~2 s) so STOP always tears down in time.
+DEFAULT_CLOSE_TIMEOUT_S = 2.0
 
 # A connector receives (url, headers) and returns a WebSocket object with
 # async methods send(str) / recv() -> str / close(). websockets satisfies this
 # shape; tests inject a fake.
 WebSocketConnector = Callable[[str, dict], Awaitable[object]]
 
-# Event types of the OpenAI Realtime Translation protocol.
+# Event types of the OpenAI Realtime Translation protocol. The translated
+# transcript arrives as append-only deltas with NO segment-end/done event, so
+# we roll a bounded buffer and start a fresh caption after a gap of silence.
 OUTPUT_DELTA_TYPE = "session.output_transcript.delta"
-OUTPUT_DONE_TYPE = "session.output_transcript.done"
 INPUT_DELTA_TYPE = "session.input_transcript.delta"
 SESSION_CLOSED_TYPE = "session.closed"
+_SESSION_LIFECYCLE = frozenset({"session.created", "session.updated"})
+# start a fresh caption when deltas resume after this many seconds of silence
+TRANSCRIPT_RESET_S = 3.0
+# cap the rolling transcript buffer (the formatter only shows the last lines)
+MAX_TRANSCRIPT_CHARS = 400
 
 
 class OpenAIProviderError(ProviderError):
@@ -77,11 +85,12 @@ class OpenAIProviderError(ProviderError):
 async def _default_connector(url: str, headers: dict) -> object:
     import websockets
 
-    # websockets >=12 uses additional_headers; earlier versions extra_headers
+    # close_timeout bounds ws.close(): without it the close handshake can block
+    # for ~10s and make STOP hang. websockets >=12 uses additional_headers.
     try:
-        return await websockets.connect(url, additional_headers=headers)
+        return await websockets.connect(url, additional_headers=headers, close_timeout=2)
     except TypeError:
-        return await websockets.connect(url, extra_headers=headers)
+        return await websockets.connect(url, extra_headers=headers, close_timeout=2)
 
 
 def _resample_pcm16_mono(data: bytes, src_rate: int, dst_rate: int) -> bytes:
@@ -126,6 +135,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         self._closed = False
         self._closing = False
         self._response_buffer = ""
+        self._last_delta_at = 0.0
+        self._got_output = False  # logged once per session for diagnostics
         # set by the receive loop when the server acknowledges session.close
         self._closed_ack = asyncio.Event()
 
@@ -136,6 +147,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         self._closed = False
         self._closing = False
         self._response_buffer = ""
+        self._last_delta_at = 0.0
+        self._got_output = False
         self._closed_ack = asyncio.Event()
         api_key = self._load_key()
         # first synchronous connection: if the key is wrong or the network is
@@ -197,27 +210,32 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         if ws is not None:
             try:
                 await ws.send(json.dumps({"type": "session.close"}))
-            except Exception:
-                pass
-            try:
                 await asyncio.wait_for(
                     self._closed_ack.wait(), timeout=self._close_timeout_s
                 )
             except TimeoutError:
                 logger.debug("session.closed non ricevuto entro il timeout")
+            except Exception:
+                pass
         self._closed = True
         task, self._task = self._task, None
+        # stop the receive/reconnect loop FIRST so it can no longer translate,
+        # emit text or reconnect while we shut the socket down
+        if task is not None:
+            task.cancel()
         ws, self._ws = self._ws, None
         if ws is not None:
             try:
-                await ws.close()
+                # bound the close handshake: it must never hang STOP
+                await asyncio.wait_for(ws.close(), timeout=2.0)
             except Exception:
                 pass
         if task is not None:
-            task.cancel()
             try:
                 await task
             except asyncio.CancelledError:
+                pass
+            except Exception:
                 pass
 
     # ------------------------------------------------------------------ internal
@@ -229,10 +247,10 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         return key
 
     def _headers(self, api_key: str) -> dict:
-        return {
-            "Authorization": f"Bearer {api_key}",
-            "OpenAI-Beta": "realtime=v1",
-        }
+        # GA translation endpoint: only the bearer token. Sending the old
+        # "OpenAI-Beta: realtime=v1" header selects the disabled beta API shape
+        # and the server closes the session (beta_api_shape_disabled).
+        return {"Authorization": f"Bearer {api_key}"}
 
     def _url(self) -> str:
         return f"{REALTIME_URL}?model={self._model}"
@@ -246,16 +264,13 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         return ws
 
     async def _send_session_config(self, ws: object) -> None:
-        # Configure PCM16 input and the output (translation) language. The
-        # translate model detects the source language on its own.
+        # GA translation session: configure only the OUTPUT (translation)
+        # language. The model auto-detects the source language, and the input
+        # format is fixed (24 kHz PCM16) — adding input.format here is the beta
+        # shape and gets the session rejected (beta_api_shape_disabled).
         session = {
             "type": "session.update",
-            "session": {
-                "audio": {
-                    "input": {"format": "pcm16"},
-                    "output": {"language": self._config.target_language},
-                },
-            },
+            "session": {"audio": {"output": {"language": self._config.target_language}}},
         }
         await ws.send(json.dumps(session))
 
@@ -313,20 +328,32 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
             return
         event_type = data.get("type", "")
         if event_type == OUTPUT_DELTA_TYPE:
-            self._response_buffer += data.get("delta", "")
+            if not self._got_output:
+                self._got_output = True
+                logger.info("Prima traduzione ricevuta dalla sessione OpenAI")
+            now = time.monotonic()
+            # a long gap since the last delta = new phrase: start a fresh caption
+            if now - self._last_delta_at > TRANSCRIPT_RESET_S:
+                self._response_buffer = ""
+            self._last_delta_at = now
+            self._response_buffer = (
+                self._response_buffer + data.get("delta", "")
+            )[-MAX_TRANSCRIPT_CHARS:]
             if self._response_buffer:
                 self._emit_partial(self._response_buffer)
-        elif event_type == OUTPUT_DONE_TYPE:
-            text = data.get("transcript") or self._response_buffer
-            if text:
-                self._emit_final(text)
-            self._response_buffer = ""
         elif event_type == INPUT_DELTA_TYPE:
             # source-language transcript: debug/future only, never sent to vMix
             logger.debug("Trascrizione sorgente ricevuta (delta)")
+        elif event_type in _SESSION_LIFECYCLE:
+            # low-volume lifecycle events: useful to diagnose a session that
+            # connects but never translates (e.g. after a STOP/START)
+            logger.info("Evento sessione OpenAI: %s", event_type)
         elif event_type == SESSION_CLOSED_TYPE:
+            logger.info("Evento sessione OpenAI: session.closed")
             self._closed_ack.set()
         elif event_type == "error":
+            code = (data.get("error") or {}).get("code", "?")
+            logger.warning("Errore dalla sessione OpenAI: %s", code)
             self._emit_error(self._error_message(data))
 
     @staticmethod

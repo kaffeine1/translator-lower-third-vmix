@@ -170,14 +170,32 @@ def test_async_exception_reenables_button_and_clears_status(qapp, tmp_path, monk
     assert "in corso" not in window.statusBar().currentMessage().lower()
 
 
-def test_settings_change_resets_status_lights(qapp, tmp_path):
+def test_settings_change_resets_only_affected_status_light(qapp, tmp_path):
     window = _make_window(tmp_path)
     for light in (window.audio_light, window.api_light, window.vmix_light):
         light.set_state(StatusState.GREEN)
 
-    assert window._apply_settings(AppConfig(), {}) is True
+    # change ONLY vMix: its light invalidates, Audio/API stay green
+    new_config = AppConfig()
+    new_config.vmix.input = "Sottopancia"
+    assert window._apply_settings(new_config, {}) is True
+    assert window.vmix_light.state == StatusState.YELLOW
+    assert window.audio_light.state == StatusState.GREEN
+    assert window.api_light.state == StatusState.GREEN
+
+
+def test_settings_change_subtitles_keeps_all_status_lights(qapp, tmp_path):
+    # editing subtitles/overlay must not wipe green Audio/API/vMix results
+    window = _make_window(tmp_path)
     for light in (window.audio_light, window.api_light, window.vmix_light):
-        assert light.state == StatusState.YELLOW
+        light.set_state(StatusState.GREEN)
+
+    new_config = AppConfig()
+    new_config.subtitles.max_lines = 1
+    new_config.subtitles.max_chars_per_line = 100
+    assert window._apply_settings(new_config, {}) is True
+    for light in (window.audio_light, window.api_light, window.vmix_light):
+        assert light.state == StatusState.GREEN
 
 
 def test_async_test_disables_button_while_running(qapp, tmp_path):
@@ -565,3 +583,106 @@ def test_wizard_navigation_buttons_are_italian(qapp):
     assert "Avanti" in wizard.buttonText(QWizard.WizardButton.NextButton)
     assert wizard.buttonText(QWizard.WizardButton.FinishButton) == "Fine"
     assert wizard.buttonText(QWizard.WizardButton.CancelButton) == "Annulla"
+
+
+# ---------------------------------------------------------------- subtitle overlay
+
+
+def test_available_monitors_lists_screens(qapp):
+    from app.gui.subtitle_overlay import available_monitors
+
+    monitors = available_monitors()
+    assert len(monitors) >= 1
+    assert any(m.primary for m in monitors)
+
+
+def test_subtitle_overlay_shows_and_hides_label_with_text(qapp):
+    from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    overlay.show_on(screen_by_name(""))  # window must be shown for isVisible()
+    qapp.processEvents()
+    overlay.set_text("Ciao mondo")
+    assert overlay._label.isVisible()
+    assert overlay._label.text() == "Ciao mondo"
+    overlay.set_text("   ")  # whitespace only -> hidden, no empty grey box
+    assert not overlay._label.isVisible()
+    overlay.close()
+
+
+def test_main_window_overlay_hidden_by_default(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    assert window._overlay is not None
+    assert not window._overlay.isVisible()
+    assert not window.btn_overlay.isChecked()
+
+
+def test_main_window_overlay_toggle_shows_and_persists(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    window.btn_overlay.setChecked(True)  # emits toggled -> show + save
+    qapp.processEvents()
+    assert window._overlay.isVisible()
+    assert window._config.overlay.enabled is True
+    # persisted to disk so it survives a restart
+    assert window._manager.load().overlay.enabled is True
+    window.close()
+
+
+def test_main_window_subtitle_reaches_overlay(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    window.btn_overlay.setChecked(True)
+    qapp.processEvents()
+    window.subtitle_received.emit("Testo tradotto")
+    qapp.processEvents()
+    assert window._overlay._label.text() == "Testo tradotto"
+    assert window._overlay._label.isVisible()
+    window.close()
+
+
+def test_settings_dialog_overlay_roundtrip(qapp):
+    config = AppConfig()
+    config.overlay.enabled = True
+    config.overlay.font_point_size = 48
+    config.overlay.background_opacity = 200
+    dialog = SettingsDialog(config, [])
+    assert dialog.overlay_enabled_check.isChecked()
+    assert dialog.overlay_font_spin.value() == 48
+    assert dialog.overlay_opacity_spin.value() == 200
+
+    dialog.overlay_font_spin.setValue(60)
+    result = dialog.result_config()
+    assert result.overlay.enabled is True
+    assert result.overlay.font_point_size == 60
+    assert result.overlay.background_opacity == 200
+
+
+def test_overlay_label_does_not_word_wrap(qapp):
+    # the overlay must honor the formatter's line count, not re-wrap by width
+    from app.gui.subtitle_overlay import SubtitleOverlay
+
+    overlay = SubtitleOverlay()
+    assert overlay._label.wordWrap() is False
+
+
+def test_overlay_shrinks_font_to_fit_wide_line(qapp):
+    from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    overlay.apply_config(font_point_size=60, background_opacity=160)
+    overlay.show_on(screen_by_name(""))
+    qapp.processEvents()
+    overlay.set_text("x" * 100)  # one very wide line
+    assert overlay._current_font_size < overlay._font_point_size
+    overlay.close()
+
+
+def test_overlay_keeps_configured_font_for_short_text(qapp):
+    from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    overlay.apply_config(font_point_size=18, background_opacity=160)
+    overlay.show_on(screen_by_name(""))
+    qapp.processEvents()
+    overlay.set_text("Ciao")
+    assert overlay._current_font_size == overlay._font_point_size
+    overlay.close()

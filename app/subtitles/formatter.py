@@ -123,6 +123,19 @@ class SubtitleFormatter:
             self._last_publish_time = float("-inf")
             self._last_activity = None
 
+    def update_config(self, config: SubtitleConfig) -> None:
+        """Apply new formatting rules on the fly (max lines/chars and timings)
+        so a running translation reflects them without a stop/start.
+
+        Thread-safe: every other method reads self._config under the same lock.
+        The on-air text is re-rendered immediately with the new rules (the
+        dedup in _publish skips the write if the result is unchanged)."""
+        with self._lock:
+            self._config = config
+            text = self._pending or self._last_published
+            if text:
+                self._publish(text, self._clock())
+
     # ------------------------------------------------------------------ logica
 
     def _interval_s(self) -> float:
