@@ -99,20 +99,31 @@ def test_empty_final_ignored():
 # ---------------------------------------------------------------- partials
 
 
-def test_partial_not_published_immediately():
+def test_first_partial_published_immediately():
+    # the first words of a caption appear at once (empty -> text is not flicker);
+    # this removes the startup lag to the lower third
     formatter, published, clock = _formatter()
     formatter.feed_partial("Hola")
+    assert published == ["Hola"]
+
+
+def test_further_partials_of_same_caption_are_throttled():
+    # only the FIRST token is immediate; growth within the caption is throttled
+    formatter, published, clock = _formatter()
+    formatter.feed_partial("Hola")  # immediate
+    formatter.feed_partial("Hola a")  # same caption -> throttled
     clock.advance(0.3)
     formatter.tick()
-    assert published == []
+    assert published == ["Hola"]  # "Hola a" not yet published (interval not elapsed)
 
 
 def test_partial_published_when_stable():
     formatter, published, clock = _formatter()
-    formatter.feed_partial("Hola a todos")
+    formatter.feed_partial("Hola")  # first token published immediately
+    formatter.feed_partial("Hola a todos")  # grows within the caption
     clock.advance(1.3)  # beyond min_update_interval_ms (1200)
     formatter.tick()
-    assert published == ["Hola a todos"]
+    assert published == ["Hola", "Hola a todos"]
 
 
 def test_growing_partial_published_at_cadence_not_per_word():
@@ -132,13 +143,22 @@ def test_growing_partial_published_at_cadence_not_per_word():
 
 def test_final_clears_pending_partial():
     formatter, published, clock = _formatter()
-    formatter.feed_partial("Hola a")
+    formatter.feed_partial("Hola a")  # first token: published immediately
     formatter.feed_final("Hola a todos")
-    assert published == ["Hola a todos"]
+    assert published == ["Hola a", "Hola a todos"]
     # the pending partial must not re-emerge on subsequent ticks
     clock.advance(5)
     formatter.tick()
-    assert published == ["Hola a todos"]
+    assert published == ["Hola a", "Hola a todos"]
+
+
+def test_new_caption_after_final_published_immediately():
+    # inter-phrase latency: once a phrase is finalized, the NEXT phrase's first
+    # words appear at once instead of waiting behind the previous caption
+    formatter, published, clock = _formatter()
+    formatter.feed_final("Prima frase")
+    formatter.feed_partial("Seconda")  # pending empty after final -> immediate
+    assert published == ["Prima frase", "Seconda"]
 
 
 def test_partial_identical_to_published_not_repeated():
@@ -227,7 +247,7 @@ def test_unfinalized_partial_does_not_resurrect_after_silence_clear():
     formatter, published, clock = _formatter()
     formatter.feed_partial("Hola a todos bienvenidos")
     clock.advance(1.3)
-    formatter.tick()  # published as a stable partial
+    formatter.tick()  # first partial already published immediately
     assert published == ["Hola a todos bienvenidos"]
 
     clock.advance(8.5)
@@ -255,11 +275,12 @@ def test_publish_resumes_after_clear():
 
 def test_reset_clears_state_without_publishing():
     formatter, published, clock = _formatter()
-    formatter.feed_partial("Qualcosa")
-    formatter.reset()
+    formatter.feed_partial("Qualcosa")  # first token: published immediately
+    assert published == ["Qualcosa"]
+    formatter.reset()  # reset itself publishes nothing and clears state
     clock.advance(5)
     formatter.tick()
-    assert published == []
+    assert published == ["Qualcosa"]  # nothing new after reset
 
 
 def test_after_reset_same_text_publishes_again():

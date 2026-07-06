@@ -5,6 +5,36 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.2.1] — 2026-07-06
+
+Correzioni dopo il primo rilascio pubblico: un crash su configurazioni
+multi-monitor e la latenza di avvio del sottotitolo.
+
+### Corretto
+
+- **Crash nativo (Qt6Gui, access violation in `QScreen::geometry`)**: l'overlay
+  sottotitoli veniva piazzato su un monitor specifico e ne conservava il
+  riferimento; a un cambio di configurazione dei display (monitor in standby,
+  cambio risoluzione, disconnessione/riconnessione) quello schermo diventava
+  non valido e la sua geometria veniva dereferenziata, chiudendo l'app senza
+  messaggio (spesso cliccando i pulsanti di test). Ora l'overlay è una finestra
+  di primo livello **senza genitore** (disaccoppiata dal churn della finestra
+  principale), ogni accesso alla geometria è validato contro l'elenco schermi
+  attivo, e l'app **reagisce ai cambi di monitor** ri-posizionando o nascondendo
+  l'overlay. Aggiunta diagnostica: hook per eccezioni nei thread e non
+  recuperabili, flush dei log e registrazione del layout schermi all'avvio.
+- **Latenza di avvio del sottotitolo ridotta**: dopo START il testo tradotto
+  compariva nell'headline vMix con molto ritardo. Il **primo sottotitolo di ogni
+  frase** ora viene pubblicato **subito** (prima attendeva l'intero
+  `min_update_interval_ms`, ~1,2 s di ritardo tutto nostro): passare da vuoto alle
+  prime parole non è sfarfallio, e l'intervallo anti-sfarfallio ora limita solo
+  gli aggiornamenti *interni* alla frase. Inoltre il provider **finalizza la frase
+  al termine** (dopo una pausa): il formatter la "blocca" e le prime parole della
+  frase successiva appaiono immediatamente invece di restare dietro la precedente.
+  Tick del formatter più fine (250→100 ms). Nota: l'attesa del rilevamento
+  fine-frase lato server OpenAI (~1–2 s) è **inerente** all'API di traduzione
+  realtime (nessun parametro `turn_detection` è accettato) e non è eliminabile.
+
 ## [0.2.0] — 2026-07-06
 
 Primo rilascio pubblico. Traduzione dal vivo dell'audio verso un sottopancia
@@ -154,5 +184,6 @@ Prima release MVP: dall'audio dal vivo al sottopancia tradotto in vMix.
 - Non è richiesto Python sul PC dell'operatore: tutto è incluso nell'installer.
 - I driver audio virtuali (es. VB-Cable) non sono inclusi né obbligatori.
 
+[0.2.1]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.1
 [0.2.0]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.0
 [0.1.0]: https://github.com/kaffeine1/translator-lower-third-vmix

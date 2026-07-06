@@ -45,7 +45,12 @@ def available_monitors() -> list[MonitorInfo]:
     primary = QGuiApplication.primaryScreen()
     monitors: list[MonitorInfo] = []
     for index, screen in enumerate(QGuiApplication.screens()):
-        geometry = screen.geometry()
+        try:
+            geometry = screen.geometry()
+        except RuntimeError:
+            # the C++ QScreen was deleted mid-enumeration (a display-layout
+            # change): skip it rather than dereference a dead object
+            continue
         monitors.append(
             MonitorInfo(
                 name=screen.name(),
@@ -64,6 +69,23 @@ def screen_by_name(name: str) -> QScreen | None:
         for screen in QGuiApplication.screens():
             if screen.name() == name:
                 return screen
+    return QGuiApplication.primaryScreen()
+
+
+def _live_screen(screen: QScreen | None) -> QScreen | None:
+    """Return ``screen`` only if it is still a connected screen, else the primary.
+
+    A QScreen the app holds can be deleted by Qt when the display layout
+    changes (a monitor unplugged, a resolution change, sleep/wake). Calling
+    ``geometry()`` on the stale wrapper then crashes natively inside
+    ``QScreen::geometry`` (Qt6Gui access violation). Re-validating against the
+    live screen list before using it avoids dereferencing a dead screen.
+    """
+    try:
+        if screen is not None and screen in QGuiApplication.screens():
+            return screen
+    except RuntimeError:
+        pass
     return QGuiApplication.primaryScreen()
 
 
@@ -124,10 +146,17 @@ class SubtitleOverlay(QWidget):
         self._fit_font()
 
     def show_on(self, screen: QScreen | None) -> None:
+        # re-validate against the live screen list: a stale QScreen would crash
+        # natively in QScreen::geometry() on a display-layout change
+        screen = _live_screen(screen)
         if screen is not None:
-            geometry = screen.geometry()
-            self.setGeometry(geometry)
-            self._max_width = int(geometry.width() * 0.92)
+            try:
+                geometry = screen.geometry()
+            except RuntimeError:
+                geometry = None  # C++ QScreen deleted between the check and here
+            if geometry is not None and not geometry.isNull():
+                self.setGeometry(geometry)
+                self._max_width = int(geometry.width() * 0.92)
         self.show()
         self.raise_()
         self._fit_font()

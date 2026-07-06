@@ -60,7 +60,11 @@ riesce a raggiungere l'API HTTP di vMix in rete.
 - **vMix** con il **Web Controller / API HTTP** attivo (porta predefinita `8088`).
 - Un **ingresso audio** visibile a Windows da cui arriva il parlato: microfono,
   mixer, scheda audio, uscita di un'applicazione o **cavo audio virtuale**
-  (es. VB-Cable). I driver audio virtuali non sono inclusi né obbligatori.
+  (es. VB-Cable). I driver audio virtuali non sono inclusi né obbligatori. In
+  alternativa puoi catturare direttamente l'**uscita audio del PC** (loopback),
+  utile per tradurre un video riprodotto sul computer senza cavi virtuali.
+- (Facoltativo) Un **secondo schermo o proiettore** se vuoi mostrare i sottotitoli
+  a video oltre che nel titolo vMix (funzione *Sottotitoli a schermo*).
 - A seconda del provider scelto (vedi [§9](#9-scegliere-e-configurare-il-provider)):
   - una **chiave API** del servizio di traduzione (OpenAI, DeepL, Google, Azure), **oppure**
   - la **modalità Demo**, che non richiede alcuna chiave, **oppure**
@@ -100,6 +104,11 @@ In alternativa, per provare senza installare, puoi eseguire direttamente
   *Titolo/GT* di vMix in cui viene scritto il sottotitolo tradotto.
 - **Modalità Demo**: se scegli un provider Demo, l'app mostra frasi di esempio
   senza usare alcuna API. Serve per collaudare audio e vMix senza spese.
+- **Uscita di sistema (loopback)**: un tipo di ingresso audio che cattura ciò che
+  il PC **riproduce** (es. un video in streaming), invece di un microfono.
+- **Sottotitoli a schermo (overlay)**: una finestra trasparente, sempre in primo
+  piano, che mostra il sottotitolo tradotto direttamente su un monitor scelto —
+  in aggiunta (o in alternativa) al titolo vMix.
 
 ---
 
@@ -141,9 +150,10 @@ l'**anteprima** dell'ultimo sottotitolo tradotto e i pulsanti di comando.
 | **Test Audio** | Ascolta alcuni secondi e mostra il livello: **verde** se rileva audio, rosso se non arriva nulla. |
 | **Test API** | Verifica il provider di traduzione scelto (o conferma la modalità Demo). |
 | **Test vMix** | Scrive una frase di prova nel titolo vMix configurato. |
-| **Impostazioni** | Provider, credenziali, lingue, audio, vMix, provider locali, regole sottotitoli. |
+| **Impostazioni** | Provider, credenziali, lingue, audio, vMix, provider locali, sottotitoli, overlay. |
 | **Apri Log** | Apre la cartella dei log (dettagli tecnici, senza segreti). |
 | **Info** | Nome e versione dell'app, provider attivo, lingue e percorsi di configurazione e log. |
+| **Sottotitoli a schermo** | Interruttore rapido: mostra/nasconde l'overlay dei sottotitoli sul monitor scelto. |
 
 L'anteprima mostra ciò che viene inviato a vMix. Se compaiono errori (API, rete,
 vMix) vengono mostrati in modo chiaro, senza finestre modali che bloccano la
@@ -177,6 +187,27 @@ chiave ogni volta. Con la Demo o i provider locali questo gruppo è vuoto.
   lasciare *predefinito di sistema* oppure scegliere un dispositivo specifico.
   L'app memorizza il **nome** del dispositivo, così resta valido anche se
   l'ordine dei dispositivi cambia dopo un ricollegamento.
+- Nell'elenco compaiono anche le voci **"Uscita di sistema (loopback)"**: scegline
+  una per tradurre **ciò che il PC sta riproducendo** (es. un video) invece di un
+  microfono. Non serve alcun cavo audio virtuale.
+
+### Sottotitoli a schermo (overlay)
+Mostra il sottotitolo tradotto su un monitor, come una didascalia sempre in primo
+piano (testo bianco su fondo grigio semitrasparente), senza rubare i clic a ciò
+che c'è sotto. Utile per il pubblico in sala, un proiettore o un secondo schermo.
+
+- **Attiva sottotitoli a schermo**: mostra/nasconde l'overlay (equivale
+  all'interruttore rapido nella finestra principale).
+- **Monitor**: su quale schermo mostrarlo, se ne hai più di uno.
+- **Dimensione testo**: dimensione del carattere; se una riga è troppo larga per
+  lo schermo, il carattere si rimpicciolisce automaticamente per farla stare
+  (rispetta il numero di righe configurato, non va a capo da solo).
+- **Opacità sfondo**: quanto è opaco il riquadro grigio dietro al testo.
+
+L'overlay mostra lo **stesso testo** inviato a vMix e segue le stesse regole dei
+[Sottotitoli](#11-le-regole-dei-sottotitoli). Se cambi la configurazione dei
+monitor mentre l'app è aperta, l'overlay si ri-posiziona automaticamente su uno
+schermo valido.
 
 ### vMix
 - **Host**: indirizzo di vMix (di norma `127.0.0.1` se sullo stesso PC).
@@ -304,9 +335,13 @@ elaborato prima di essere inviato a vMix:
   suddiviso in righe leggibili; le frasi troppo lunghe vengono riflusse o
   troncate mantenendo le ultime righe.
 - **Intervallo minimo di aggiornamento (1200 ms)**: il testo non viene aggiornato
-  a ogni parola. I risultati *finali* vengono pubblicati subito; quelli
-  *parziali* solo se restano stabili per l'intervallo impostato. Aggiornamenti
-  identici consecutivi non vengono inviati.
+  a ogni parola. Le **prime parole di ogni frase compaiono subito** (passare da
+  vuoto al testo non è sfarfallio); gli aggiornamenti *successivi all'interno
+  della stessa frase* vengono inviati al massimo una volta per intervallo.
+  Aggiornamenti identici consecutivi non vengono inviati. Nota: una parte del
+  ritardo iniziale dipende dal servizio di traduzione, che attende una breve
+  pausa del parlato prima di produrre il testo — è normale con la traduzione
+  in tempo reale.
 - **Mantieni sottotitolo (5 s)**: un sottotitolo resta in onda per questo tempo
   dopo l'ultima frase, così non sparisce troppo in fretta.
 - **Cancella dopo silenzio (8 s)**: se non arriva più parlato per questo numero di
@@ -354,6 +389,8 @@ compromesso per il parlato dal vivo.
 | **Connessione Internet assente** | I provider cloud richiedono Internet: controlla la rete. |
 | **Pacchetti locali non installati** | Il provider **Locale** richiede i componenti di `requirements-optional.txt`: usa un provider cloud/Demo oppure installali. |
 | **Indirizzo vMix non valido** | Controlla che nell'Host non sia inclusa la porta (Host e Porta sono campi separati). |
+| **L'overlay non compare / è sul monitor sbagliato** | In *Impostazioni → Sottotitoli a schermo* attiva l'overlay e scegli il **Monitor** corretto; l'overlay appare quando arriva il primo sottotitolo. |
+| **Il testo tradotto tarda ad apparire** | Un'attesa iniziale di 1–2 s è normale: il servizio attende una pausa del parlato prima di tradurre. Se il ritardo è molto maggiore, verifica la connessione e che l'audio arrivi (Test Audio). |
 
 L'elenco completo dei messaggi con cause e soluzioni è in
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Per i dettagli tecnici usa **Apri Log**.
@@ -396,6 +433,16 @@ aumenta l'intervallo minimo e "Mantieni sottotitolo" per più stabilità.
 **Posso cambiare la lingua tradotta?**
 Sì, in *Impostazioni → Provider* imposta **Lingua sorgente** e **Lingua di
 uscita** tra quelle disponibili.
+
+**Posso tradurre un video riprodotto sul PC?**
+Sì: come ingresso audio scegli una voce **"Uscita di sistema (loopback)"** e
+avvia. L'app tradurrà l'audio riprodotto dal computer, senza bisogno di cavi
+audio virtuali.
+
+**Posso mostrare i sottotitoli su uno schermo, senza vMix?**
+Sì: attiva i **Sottotitoli a schermo** (interruttore nella finestra principale o
+in *Impostazioni → Sottotitoli a schermo*) e scegli il monitor. L'overlay funziona
+in aggiunta o in alternativa al titolo vMix.
 
 ---
 

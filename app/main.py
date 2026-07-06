@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from pathlib import Path
 
 from app import APP_DISPLAY_NAME, APP_NAME, __version__
@@ -52,12 +53,39 @@ def _install_crash_diagnostics() -> None:
     except Exception:
         logging.getLogger("app.main").warning("faulthandler non attivabile")
 
+    def _flush_logs() -> None:
+        # a native abort can follow immediately: flush so the trace is on disk
+        for handler in logging.getLogger().handlers:
+            try:
+                handler.flush()
+            except Exception:
+                pass
+
     def _log_uncaught(exc_type, exc, tb) -> None:
         logging.getLogger("app.main").critical(
             "Eccezione non gestita", exc_info=(exc_type, exc, tb)
         )
+        _flush_logs()
+
+    def _log_thread_uncaught(args) -> None:
+        logging.getLogger("app.main").critical(
+            "Eccezione non gestita nel thread %s",
+            getattr(args.thread, "name", "?"),
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+        _flush_logs()
+
+    def _log_unraisable(args) -> None:
+        logging.getLogger("app.main").critical(
+            "Eccezione non recuperabile: %s",
+            getattr(args, "err_msg", "") or "",
+            exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+        )
+        _flush_logs()
 
     sys.excepthook = _log_uncaught
+    threading.excepthook = _log_thread_uncaught
+    sys.unraisablehook = _log_unraisable
 
 
 def main() -> int:
@@ -85,6 +113,19 @@ def main() -> int:
     icon_path = _icon_path()
     if icon_path is not None:
         app.setWindowIcon(QIcon(str(icon_path)))
+
+    # log the display layout: overlay placement and window/dialog positioning
+    # depend on it, and past native crashes traced to a stale QScreen
+    try:
+        from PySide6.QtGui import QGuiApplication
+
+        layout = ", ".join(
+            f"{s.name()} {s.geometry().width()}x{s.geometry().height()}"
+            for s in QGuiApplication.screens()
+        )
+        logger.info("Schermi rilevati: %s", layout or "(nessuno)")
+    except Exception:
+        logger.warning("Impossibile elencare gli schermi")
 
     # Real audio (M3), vMix (M4) and OpenAI provider (M7); without a saved key
     # the provider falls back to the fake demo

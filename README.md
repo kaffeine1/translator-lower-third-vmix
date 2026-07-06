@@ -29,11 +29,17 @@ Spanish live audio  →  Italian subtitle  →  vMix lower third
 - **Provider-aware first-run wizard**: language & provider → the credentials it
   actually needs → provider test → audio → vMix → vMix test → save.
 - **Multiple translation providers**, selectable from Settings (see below).
-- **Audio capture** from any Windows input device, with a level meter.
+- **Audio capture** from any Windows input device, with a level meter — including
+  **system-output (WASAPI loopback)** capture to translate whatever the PC plays
+  (e.g. a streamed video), no virtual audio cable needed.
+- **On-screen subtitle overlay**: a frameless, always-on-top, click-through
+  caption on a chosen monitor — for a second screen or projector, alongside or
+  instead of the vMix title. Survives display-layout changes.
 - **Secure API keys** stored in the Windows Credential Manager — never in files,
   never in logs.
-- **Anti-flicker subtitles**: aggregates partials, max two lines, de-duplicates,
-  holds and clears after silence.
+- **Anti-flicker subtitles**: the first words of each caption appear immediately,
+  then updates are throttled within the caption; max lines, de-duplication, hold
+  and clear-after-silence. Editable **live** without stop/start.
 - **vMix output** via the HTTP API (`SetText`) with correct URL encoding, short
   timeouts and a light retry.
 - **Rotating logs** with secret masking; an **About/diagnostics** panel.

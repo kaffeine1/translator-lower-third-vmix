@@ -332,8 +332,13 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
                 self._got_output = True
                 logger.info("Prima traduzione ricevuta dalla sessione OpenAI")
             now = time.monotonic()
-            # a long gap since the last delta = new phrase: start a fresh caption
+            # a long gap since the last delta = new phrase: finalize the phrase
+            # that just ended (the formatter locks it in without waiting) and
+            # start a fresh caption, so the next phrase's first words appear at
+            # once instead of being throttled behind the previous caption.
             if now - self._last_delta_at > TRANSCRIPT_RESET_S:
+                if self._response_buffer:
+                    self._emit_final(self._response_buffer)
                 self._response_buffer = ""
             self._last_delta_at = now
             self._response_buffer = (

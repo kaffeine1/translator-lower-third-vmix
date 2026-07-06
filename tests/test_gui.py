@@ -686,3 +686,52 @@ def test_overlay_keeps_configured_font_for_short_text(qapp):
     overlay.set_text("Ciao")
     assert overlay._current_font_size == overlay._font_point_size
     overlay.close()
+
+
+def test_live_screen_falls_back_to_primary_for_unknown(qapp):
+    # a stale/unknown QScreen must never be used for geometry(): fall back to
+    # the primary screen, which prevents the native QScreen::geometry crash
+    from PySide6.QtGui import QGuiApplication
+
+    from app.gui.subtitle_overlay import _live_screen
+
+    primary = QGuiApplication.primaryScreen()
+    assert _live_screen(None) is primary  # None -> primary
+    # a live screen passes through unchanged
+    assert _live_screen(primary) is primary
+
+
+def test_overlay_show_on_none_screen_does_not_raise(qapp):
+    from app.gui.subtitle_overlay import SubtitleOverlay
+
+    overlay = SubtitleOverlay()
+    overlay.show_on(None)  # must not touch geometry() on a missing screen
+    assert overlay.isVisible()
+    overlay.close()
+
+
+def test_main_window_overlay_is_parentless(qapp, tmp_path):
+    # decoupled from the main window so its activation/screen churn cannot drive
+    # a stale-QScreen native crash
+    window = _make_window(tmp_path)
+    assert window._overlay is not None
+    assert window._overlay.parent() is None
+
+
+def test_on_screens_changed_reapplies_overlay_without_crashing(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    window.btn_overlay.setChecked(True)  # enable + show
+    qapp.processEvents()
+    assert window._overlay.isVisible()
+    # a simulated display-layout change must re-place the overlay, not crash
+    window._on_screens_changed()
+    qapp.processEvents()
+    assert window._overlay.isVisible()  # still shown (enabled)
+    window.close()
+
+
+def test_on_screens_changed_is_noop_while_closing(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    window._closing = True
+    # must early-return without touching the overlay during teardown
+    window._on_screens_changed()

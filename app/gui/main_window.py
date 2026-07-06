@@ -13,7 +13,7 @@ import logging
 import threading
 
 from PySide6.QtCore import QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
@@ -316,11 +316,36 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ overlay
 
     def _setup_overlay(self) -> None:
-        self._overlay = SubtitleOverlay(self)
+        # Parentless top-level: an independent caption surface on any monitor,
+        # deliberately NOT a child of the main window. As a child, the main
+        # window's activation/screen churn (e.g. showing a dialog, moving
+        # between monitors) drove Qt to reposition the translucent tool window
+        # and query a screen that could already be gone — a native crash in
+        # QScreen::geometry(). A parentless window is decoupled from that.
+        self._overlay = SubtitleOverlay()
         # feed it the same published subtitle text as the preview
         self.subtitle_received.connect(self._overlay.set_text)
+        # re-place (or hide) the overlay when the display layout changes, so it
+        # never keeps a native window on a screen that has been removed
+        gui_app = QGuiApplication.instance()
+        if gui_app is not None:
+            gui_app.screenAdded.connect(self._on_screens_changed)
+            gui_app.screenRemoved.connect(self._on_screens_changed)
+            gui_app.primaryScreenChanged.connect(self._on_screens_changed)
         self._sync_overlay_button()
         self._apply_overlay_state()
+
+    def _on_screens_changed(self, *_args) -> None:
+        """React to a display-layout change (monitor added/removed/primary
+        swapped): detach the overlay from any now-invalid screen and re-place it
+        on a valid one, so a stale QScreen is never dereferenced."""
+        if self._closing or self._overlay is None:
+            return
+        try:
+            self._overlay.hide()  # drop the native window off a possibly-dead screen
+            self._apply_overlay_state()
+        except Exception:
+            logger.exception("Errore riposizionando l'overlay dopo un cambio schermo")
 
     def _apply_overlay_state(self) -> None:
         """Apply style + monitor and show/hide the overlay from the config."""

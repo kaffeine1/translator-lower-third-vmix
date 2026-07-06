@@ -6,7 +6,7 @@ Lifecycle managed here, outside the GUI:
 - a thread with an asyncio event loop hosts the provider (connect/send_audio/close);
 - the provider's text events (loop thread) feed the
   SubtitleFormatter;
-- a "tick" thread calls formatter.tick() ~every 250 ms (stable partials,
+- a "tick" thread calls formatter.tick() ~every 100 ms (stable partials,
   clear after silence);
 - the formatter's publish callback is very fast: it enqueues the text. An
   "output" thread consumes the queue and sends it to the output (vMix), which may block.
@@ -31,7 +31,7 @@ from app.subtitles.formatter import SubtitleFormatter
 
 logger = logging.getLogger("app.pipeline")
 
-TICK_INTERVAL_S = 0.25
+TICK_INTERVAL_S = 0.10
 _OUTPUT_SENTINEL = object()
 
 TextSink = Callable[[str], None]

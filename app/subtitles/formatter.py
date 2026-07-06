@@ -4,9 +4,12 @@
 
 Rules (from SubtitleConfig):
 - FINALS are published immediately;
-- PARTIALS are published only if stable for min_update_interval_ms, or
-  — to avoid leaving the lower third empty during long sentences — at a maximum
-  cadence of one update every min_update_interval_ms;
+- the FIRST partial of a caption is published immediately (empty -> first words
+  is never flicker): waiting a full min_update_interval_ms here was the dominant
+  startup / inter-phrase lag to the lower third;
+- further PARTIALS of the same caption are published only if stable for
+  min_update_interval_ms, or — to avoid leaving the lower third empty during long
+  sentences — at a maximum cadence of one update every min_update_interval_ms;
 - never two identical consecutive publications;
 - the text wraps by words onto max_lines lines of max_chars_per_line;
   if it exceeds, the LAST lines are kept (live, the recent words matter);
@@ -89,12 +92,21 @@ class SubtitleFormatter:
         with self._lock:
             now = self._clock()
             self._last_activity = now
-            if not self._pending:
+            # pending empty => this is the first token of a NEW caption
+            new_caption = not self._pending
+            if new_caption:
                 self._pending_first_seen = now
             if cleaned != self._pending:
                 self._pending = cleaned
                 self._pending_since = now
-            self._maybe_publish_partial(now)
+            if new_caption:
+                # show the first words of a caption at once: the anti-flicker
+                # interval must only throttle updates WITHIN a caption, never
+                # delay its start. Waiting a full min_update_interval_ms here
+                # was the dominant startup / inter-phrase lag to the lower third.
+                self._publish(self._pending, now)
+            else:
+                self._maybe_publish_partial(now)
 
     def feed_final(self, text: str) -> None:
         cleaned = clean_text(text)

@@ -121,13 +121,28 @@ def test_output_transcript_resets_after_silence(monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(mod.time, "monotonic", lambda: clock["t"])
     provider, _ws = _provider()
-    partials, _finals, _errors = _sink(provider)
+    partials, finals, _errors = _sink(provider)
 
     _feed(provider, type="session.output_transcript.delta", delta="Prima frase")
     clock["t"] += mod.TRANSCRIPT_RESET_S + 1.0  # silence gap -> fresh caption
     _feed(provider, type="session.output_transcript.delta", delta="Seconda")
 
     assert partials[-1] == "Seconda"  # buffer reset, not "Prima fraseSeconda"
+    # the completed phrase is finalized at the gap so the formatter locks it in
+    # and the next caption's first words appear at once (no inter-phrase lag)
+    assert finals == ["Prima frase"]
+
+
+def test_no_final_on_first_delta(monkeypatch):
+    # the initial empty buffer must not emit a spurious final on the first delta
+    import app.providers.openai_realtime as mod
+
+    clock = {"t": 5000.0}
+    monkeypatch.setattr(mod.time, "monotonic", lambda: clock["t"])
+    provider, _ws = _provider()
+    _partials, finals, _errors = _sink(provider)
+    _feed(provider, type="session.output_transcript.delta", delta="Ciao")
+    assert finals == []
 
 
 def test_output_transcript_buffer_is_capped():
