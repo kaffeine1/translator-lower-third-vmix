@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 
 from app.i18n import t
@@ -48,6 +49,9 @@ class LocalMarianTranslationProvider(TranslationProvider):
         self._translator_factory = translator_factory or _make_real_translator
         self._translate_fn: Callable[[str], str] | None = None
         self._resolved_model = ""
+        # concurrent first translations must not each build the (heavy) model:
+        # the lazy build below runs on to_thread workers, so guard it
+        self._build_lock = threading.Lock()
 
     async def connect(self, config: ProviderConfig) -> None:
         # keep connect() fast: only resolve the model name. The model is built
@@ -68,12 +72,17 @@ class LocalMarianTranslationProvider(TranslationProvider):
         except LocalTranslationError:
             raise
         except Exception:
-            logger.warning("Traduzione locale fallita")
+            # keep the real traceback in the logs: the operator sees the short
+            # Italian message, but without this a model/library failure is
+            # undiagnosable (the cause is swallowed by `from None` below)
+            logger.warning("Traduzione locale fallita", exc_info=True)
             raise LocalTranslationError(t("local.translate_failed")) from None
 
     def _translate_blocking(self, text: str) -> str:
         if self._translate_fn is None:
-            self._translate_fn = self._translator_factory(self._resolved_model)
+            with self._build_lock:
+                if self._translate_fn is None:  # double-checked under the lock
+                    self._translate_fn = self._translator_factory(self._resolved_model)
         return self._translate_fn(text)
 
     async def close(self) -> None:
@@ -81,15 +90,21 @@ class LocalMarianTranslationProvider(TranslationProvider):
 
 
 def _make_real_translator(model_name: str) -> Callable[[str], str]:
+    # transformers 5 removed the "translation" pipeline task, so build the
+    # seq2seq model directly — this works on transformers 4.x and 5.x alike
     try:
-        from transformers import pipeline
+        import torch
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
     except ImportError:
         raise LocalTranslationError(t("local.transformers_not_installed")) from None
-    translator = pipeline("translation", model=model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model.eval()
 
     def translate(text: str) -> str:
-        result = translator(text)
-        # transformers returns [{"translation_text": "..."}]
-        return result[0]["translation_text"]
+        batch = tokenizer([text], return_tensors="pt", truncation=True)
+        with torch.no_grad():
+            output = model.generate(**batch)
+        return tokenizer.batch_decode(output, skip_special_tokens=True)[0]
 
     return translate

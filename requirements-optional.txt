@@ -21,3 +21,4 @@ google-cloud-speech>=2.21              # GoogleSpeechProvider
 faster-whisper>=1.0    # FasterWhisperSpeechProvider (STT locale)
 transformers>=4.40     # LocalMarianTranslationProvider (traduzione locale)
 torch>=2.2             # backend per transformers
+sentencepiece>=0.2     # tokenizer dei modelli MarianMT (Helsinki-NLP/opus-mt-*)

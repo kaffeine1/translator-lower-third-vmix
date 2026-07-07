@@ -676,9 +676,12 @@ OpenAI realtime → vMix
 > Registered as the composed realtime pipeline "Locale (Faster-Whisper →
 > MarianMT)" (no credentials); model (tiny…large-v3) and device (CPU/CUDA) are
 > configurable in Settings with a hardware note; `Test API` verifies the
-> optional packages. **Remaining:** NLLB/M2M100 as multilingual translation
-> models, a latency benchmark tool, and a real end-to-end validation on a GPU
-> machine.
+> optional packages. **Validated end-to-end on CPU (2026-07-07)**: real Italian
+> speech → Faster-Whisper (tiny) → MarianMT → correct, ordered English text
+> (fixed on the way: transformers-5 compatibility, out-of-order finals, and a
+> duplicated lazy model build). **Remaining:** NLLB/M2M100 as multilingual
+> translation models, a latency benchmark tool, and a validation on a GPU
+> machine (CUDA).
 
 ### Goal
 

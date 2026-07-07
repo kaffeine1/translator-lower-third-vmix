@@ -5,6 +5,28 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Corretto
+
+- **Provider locale (Faster-Whisper → MarianMT) di nuovo funzionante e
+  collaudato end-to-end su CPU** (parlato italiano reale → trascrizione →
+  traduzione inglese corretta e in ordine):
+  - compatibilità con **transformers 5** (che ha rimosso il task
+    `pipeline("translation")` usato per MarianMT): il traduttore ora usa
+    direttamente `AutoTokenizer`/`AutoModelForSeq2SeqLM`, funziona con
+    transformers 4.x e 5.x;
+  - i **sottotitoli finali escono nell'ordine del parlato**: due traduzioni in
+    volo potevano completarsi invertite (il testo più corto traduce prima) e le
+    frasi si scambiavano in onda; ora i finali sono serializzati;
+  - il **modello di traduzione viene costruito una sola volta** anche con più
+    traduzioni concorrenti al primo avvio (prima: build multiple in parallelo,
+    centinaia di MB ciascuna);
+  - gli errori del traduttore locale ora finiscono nei log **con il traceback
+    reale** (prima solo "Traduzione locale fallita", indiagnosticabile);
+  - aggiunto `sentencepiece` ai requisiti opzionali (necessario al tokenizer
+    dei modelli Helsinki-NLP/opus-mt-*).
+
 ## [0.2.2] — 2026-07-06
 
 Sottotitoli a schermo e titolo vMix ora funzionano insieme: collaudato l'uso

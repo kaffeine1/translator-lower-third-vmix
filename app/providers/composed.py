@@ -42,6 +42,11 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         self._seq = 0
         self._closed = False
         self._loop: asyncio.AbstractEventLoop | None = None
+        # finals must reach the air in speech order: without this, two final
+        # translations in flight can complete out of order (the shorter text
+        # translates faster) and captions swap on air. asyncio.Lock wakes
+        # waiters FIFO, so serializing here preserves the arrival order.
+        self._final_lock = asyncio.Lock()
         speech.on_partial_text(self._on_source_partial)
         speech.on_final_text(self._on_source_final)
         speech.on_error(self._emit_error)
@@ -105,14 +110,15 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
             self._emit_partial(translated)
 
     async def _translate_final(self, text: str) -> None:
-        try:
-            translated = await self._translator.translate(text)
-        except Exception:
-            logger.exception("Traduzione finale fallita")
-            self._emit_error(t("provider.translate_failed"))
-            return
-        if not self._closed and translated:
-            self._emit_final(translated)
+        async with self._final_lock:  # keep finals in speech order (see __init__)
+            try:
+                translated = await self._translator.translate(text)
+            except Exception:
+                logger.exception("Traduzione finale fallita")
+                self._emit_error(t("provider.translate_failed"))
+                return
+            if not self._closed and translated:
+                self._emit_final(translated)
 
 
 # --------------------------------------------------------------------------- #

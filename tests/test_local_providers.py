@@ -89,7 +89,13 @@ def test_whisper_custom_model_and_device():
     assert captured["device"] == "cuda"
 
 
-def test_whisper_real_engine_missing_package_is_readable():
+def test_whisper_real_engine_missing_package_is_readable(monkeypatch):
+    # simulate the absent optional package via sys.modules so the test stays
+    # deterministic when faster-whisper IS installed in the dev environment
+    import sys
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
+
     async def run():
         provider = FasterWhisperSpeechProvider()  # real factory
         with pytest.raises(LocalWhisperError) as excinfo:
@@ -117,14 +123,19 @@ def test_whisper_engine_buffer_is_capped():
     assert len(engine._buffer) <= engine._max_bytes
 
 
-def test_start_translation_surfaces_local_missing_package():
+def test_start_translation_surfaces_local_missing_package(monkeypatch):
     # the local pipeline needs no credentials, so START builds it and connect()
-    # fails on the missing package: the operator must see the actionable message
+    # fails on the missing package: the operator must see the actionable message.
+    # A None sys.modules entry makes the import raise even when the optional
+    # package IS installed in the dev environment (determinism).
+    import sys
+
     from app.audio.input import FakeAudioInput
     from app.config.models import AppConfig
     from app.config.secrets import InMemorySecretStore
     from app.services import LiveAppServices
 
+    monkeypatch.setitem(sys.modules, "faster_whisper", None)
     services = LiveAppServices(FakeAudioInput(), InMemorySecretStore())
     config = AppConfig()
     config.provider = "local"
@@ -192,9 +203,16 @@ def test_marian_translate_failure_is_readable():
     asyncio.run(run())
 
 
-def test_marian_real_model_missing_package_is_readable():
+def test_marian_real_model_missing_package_is_readable(monkeypatch):
     # the model is built lazily on first translate(): a missing package surfaces
-    # there with a readable message (connect stays fast)
+    # there with a readable message (connect stays fast). Simulate the absence
+    # via sys.modules so the test does not depend on the dev environment (and
+    # never downloads a real model when transformers IS installed).
+    import sys
+
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setitem(sys.modules, "transformers", None)
+
     async def run():
         provider = LocalMarianTranslationProvider()  # real factory
         await provider.connect(ProviderConfig())
@@ -310,3 +328,63 @@ def test_create_local_provider_defaults_without_config():
     speech = create_speech_provider("faster-whisper", None)  # no config
     assert speech._model == "small"
     assert speech._device == "cpu"
+
+
+# ---------------------------------------------------------------- ordering / build race
+
+
+def test_composed_finals_keep_speech_order_with_slow_translator():
+    # two finals in flight: the FIRST one is slower to translate. Without the
+    # serialization the second would reach the air first and captions would swap.
+    from app.providers.composed import ComposedRealtimeProvider
+
+    class SlowFirstTranslator:
+        async def connect(self, config) -> None: ...
+        async def close(self) -> None: ...
+
+        async def translate(self, text: str) -> str:
+            await asyncio.sleep(0.2 if text == "prima frase" else 0.0)
+            return text.upper()
+
+    async def run():
+        engines: list[FakeWhisperEngine] = []
+
+        def factory(**opts):
+            engine = FakeWhisperEngine(**opts)
+            engines.append(engine)
+            return engine
+
+        speech = FasterWhisperSpeechProvider(engine_factory=factory)
+        provider = ComposedRealtimeProvider(speech, SlowFirstTranslator())
+        finals: list[str] = []
+        provider.on_final_text(finals.append)
+        await provider.connect(ProviderConfig())
+        engines[0].emit_final("prima frase")
+        engines[0].emit_final("seconda frase")
+        await asyncio.sleep(0.5)  # let both translations complete
+        await provider.close()
+        assert finals == ["PRIMA FRASE", "SECONDA FRASE"]  # speech order preserved
+
+    asyncio.run(run())
+
+
+def test_marian_concurrent_first_translations_build_model_once():
+    # the lazy model build runs on to_thread workers: concurrent first calls
+    # must share ONE build (each real build costs hundreds of MB of RAM)
+    import time
+
+    builds = []
+
+    def factory(model_name: str):
+        builds.append(model_name)
+        time.sleep(0.05)  # widen the race window
+        return lambda text: text.upper()
+
+    async def run():
+        provider = LocalMarianTranslationProvider(translator_factory=factory)
+        await provider.connect(ProviderConfig())
+        results = await asyncio.gather(*(provider.translate(f"testo {i}") for i in range(4)))
+        assert sorted(results) == [f"TESTO {i}" for i in range(4)]
+        assert len(builds) == 1  # a single model build despite the concurrency
+
+    asyncio.run(run())
