@@ -439,6 +439,7 @@ class SettingsDialog(QDialog):
     def _on_download_runtime(self) -> None:
         self.btn_download_runtime.setEnabled(False)
         self.btn_download_models.setEnabled(False)
+        self.btn_remove_models.setEnabled(False)
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # busy until the size is known
 
@@ -459,8 +460,11 @@ class SettingsDialog(QDialog):
         threading.Thread(target=worker, daemon=True, name="runtime-download").start()
 
     def _on_download_models(self) -> None:
+        # removing models while a download is writing them would kill the
+        # download with an opaque OSError: one operation at a time
         self.btn_download_runtime.setEnabled(False)
         self.btn_download_models.setEnabled(False)
+        self.btn_remove_models.setEnabled(False)
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # model downloads: busy indicator
         local_model = self.local_model_combo.currentData()
@@ -495,6 +499,7 @@ class SettingsDialog(QDialog):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        self.btn_download_runtime.setEnabled(False)
         self.btn_download_models.setEnabled(False)
         self.btn_remove_models.setEnabled(False)
 

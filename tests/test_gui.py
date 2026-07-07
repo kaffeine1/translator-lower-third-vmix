@@ -906,3 +906,28 @@ def test_settings_remove_models_button_state_and_flow(qapp, monkeypatch, tmp_pat
         qapp, lambda: "liberato" in dialog.runtime_status_label.text().lower()
     )
     assert "75 MB" in dialog.runtime_status_label.text()
+
+
+def test_download_disables_remove_button_too(qapp, monkeypatch, tmp_path):
+    # regression: removing models while a download is writing them killed the
+    # download with an opaque OSError — one operation at a time
+    import threading as _threading
+
+    from app import local_runtime as lr
+
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    dialog = SettingsDialog(AppConfig(), [])
+    fake = lr.DownloadedModel("Systran/faster-whisper-tiny", tmp_path, 1)
+    monkeypatch.setattr(lr, "downloaded_models", lambda: [fake])
+    dialog._refresh_runtime_state()
+    assert dialog.btn_remove_models.isEnabled()
+
+    release = _threading.Event()
+    monkeypatch.setattr(
+        lr, "download_models", lambda *a, **k: release.wait(timeout=3)
+    )
+    dialog._on_download_models()
+    assert not dialog.btn_remove_models.isEnabled()  # blocked during download
+    assert not dialog.btn_download_models.isEnabled()
+    release.set()
+    assert _process_until(qapp, lambda: dialog.btn_remove_models.isEnabled())

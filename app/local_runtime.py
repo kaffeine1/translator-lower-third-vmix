@@ -358,7 +358,9 @@ def download_models(
         logger.info("Download modello avviato: %s", repo)
         try:
             downloader(repo)
-        except Exception as exc:
-            logger.warning("Download modello fallito (%s): %s", repo, type(exc).__name__)
+        except Exception:
+            # full traceback in the log (public repos, no secrets): "OSError"
+            # alone proved undiagnosable in the field
+            logger.warning("Download modello fallito (%s)", repo, exc_info=True)
             raise LocalRuntimeError(t("runtime.model_download_failed", name=repo)) from None
         logger.info("Download modello completato: %s", repo)
