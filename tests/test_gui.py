@@ -735,3 +735,50 @@ def test_on_screens_changed_is_noop_while_closing(qapp, tmp_path):
     window._closing = True
     # must early-return without touching the overlay during teardown
     window._on_screens_changed()
+
+
+def test_overlay_reasserts_topmost_on_new_text(qapp):
+    # a fullscreen always-on-top app (e.g. the vMix output) shown later would
+    # bury the caption: every new text must re-assert the top position
+    from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    overlay.show_on(screen_by_name(""))
+    qapp.processEvents()
+    calls = []
+    overlay._assert_topmost = lambda: calls.append(1)
+    overlay.set_text("Ciao mondo")
+    assert calls == [1]
+    overlay.set_text("   ")  # cleared text must not re-raise
+    assert calls == [1]
+    overlay.close()
+
+
+def test_overlay_raise_watchdog_follows_visibility(qapp):
+    # the periodic re-assert runs only while the overlay is visible
+    from app.gui.subtitle_overlay import _RAISE_INTERVAL_MS, SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    assert not overlay._raise_timer.isActive()
+    overlay.show_on(screen_by_name(""))
+    qapp.processEvents()
+    assert overlay._raise_timer.isActive()
+    assert overlay._raise_timer.interval() == _RAISE_INTERVAL_MS
+    overlay.hide()
+    qapp.processEvents()
+    assert not overlay._raise_timer.isActive()
+    overlay.close()
+
+
+def test_overlay_set_text_does_not_move_or_resize(qapp):
+    # re-asserting z-order must never touch geometry (no flicker/jump)
+    from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+
+    overlay = SubtitleOverlay()
+    overlay.show_on(screen_by_name(""))
+    qapp.processEvents()
+    before = overlay.geometry()
+    overlay.set_text("Testo di prova sopra vMix")
+    qapp.processEvents()
+    assert overlay.geometry() == before
+    overlay.close()

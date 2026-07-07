@@ -185,3 +185,36 @@ def test_live_services_update_config_propagates_subtitles_to_running_pipeline():
     # no running pipeline: update_config must not raise
     services._pipeline = None
     services.update_config(AppConfig())
+
+
+# ---------------------------------------------------------------- output queue
+
+def test_output_queue_keeps_only_freshest_subtitle():
+    # with a slow/unreachable vMix the output worker lags: newer publishes must
+    # replace queued-but-unsent captions instead of replaying them stale
+    provider = FakeTranslationProvider(script=[], loop=False)
+    pipeline = TranslationPipeline(
+        provider, AppConfig(), on_subtitle=lambda _t: None, output_publish=lambda _t: None
+    )
+    # worker not started: items stay in the queue
+    pipeline._on_formatter_publish("prima frase")
+    pipeline._on_formatter_publish("seconda frase")
+    pipeline._on_formatter_publish("terza frase")
+    assert pipeline._output_queue.qsize() == 1
+    assert pipeline._output_queue.get_nowait() == "terza frase"
+
+
+def test_output_queue_drain_never_swallows_shutdown_sentinel():
+    from app.pipeline import _OUTPUT_SENTINEL
+
+    provider = FakeTranslationProvider(script=[], loop=False)
+    pipeline = TranslationPipeline(
+        provider, AppConfig(), on_subtitle=lambda _t: None, output_publish=lambda _t: None
+    )
+    pipeline._output_queue.put(_OUTPUT_SENTINEL)
+    pipeline._on_formatter_publish("testo")
+    items = []
+    while not pipeline._output_queue.empty():
+        items.append(pipeline._output_queue.get_nowait())
+    assert _OUTPUT_SENTINEL in items  # the worker will still shut down
+    assert "testo" in items

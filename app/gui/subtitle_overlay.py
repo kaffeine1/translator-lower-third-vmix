@@ -18,12 +18,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QGuiApplication, QScreen
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 # never shrink the auto-fit font below this (readability floor)
 _MIN_FONT_POINT_SIZE = 10
+
+# watchdog cadence for re-asserting the always-on-top position (see
+# _assert_topmost); ~1.5 s is enough to win against a fullscreen app shown
+# later without hammering the window manager
+_RAISE_INTERVAL_MS = 1500
 
 # Grey caption background; only the alpha (opacity) is user-configurable.
 _BACKGROUND_RGB = (30, 30, 30)
@@ -129,6 +134,16 @@ class SubtitleOverlay(QWidget):
         self._max_width = 0  # available caption width (set in show_on)
         self._apply_style()
 
+        # Another always-on-top window shown AFTER the overlay (e.g. the vMix
+        # fullscreen output) ends up above it and stays there: within the
+        # topmost band the last-raised window wins, and this overlay is
+        # click-through so it can never re-raise itself via interaction. The
+        # caption would keep painting, invisible, underneath. Re-assert the
+        # top position on every new text and periodically while visible.
+        self._raise_timer = QTimer(self)
+        self._raise_timer.setInterval(_RAISE_INTERVAL_MS)
+        self._raise_timer.timeout.connect(self._assert_topmost)
+
     # ------------------------------------------------------------------ API
 
     def set_text(self, text: str) -> None:
@@ -137,6 +152,7 @@ class SubtitleOverlay(QWidget):
         self._label.setVisible(bool(text))
         if text:
             self._fit_font()
+            self._assert_topmost()
 
     def apply_config(self, *, font_point_size: int, background_opacity: int) -> None:
         self._font_point_size = max(int(font_point_size), 8)
@@ -155,11 +171,43 @@ class SubtitleOverlay(QWidget):
             except RuntimeError:
                 geometry = None  # C++ QScreen deleted between the check and here
             if geometry is not None and not geometry.isNull():
+                # pin the native window to the target monitor first: with
+                # mixed-DPI monitors a bare setGeometry can land on the wrong
+                # screen because coordinates are rescaled per screen
+                handle = self.windowHandle()
+                if handle is not None:
+                    handle.setScreen(screen)
+                # fixed size = the target screen: the layout must never resize
+                # the surface (a wide caption made the top-level grow past the
+                # monitor edge via a stale minimum-size, spilling onto the
+                # neighbour screen); the font auto-fit keeps the text inside
+                self.setFixedSize(geometry.size())
                 self.setGeometry(geometry)
                 self._max_width = int(geometry.width() * 0.92)
         self.show()
-        self.raise_()
+        self._assert_topmost()
         self._fit_font()
+
+    # ------------------------------------------------------------------ z-order
+
+    def _assert_topmost(self) -> None:
+        """Bring the overlay back to the top of the always-on-top band.
+
+        On Windows raise_() maps to SetWindowPos(HWND_TOP, SWP_NOACTIVATE |
+        SWP_NOMOVE | SWP_NOSIZE): no focus steal (the overlay also sets
+        WA_ShowWithoutActivating), no move/repaint, and it deterministically
+        wins over another topmost window (e.g. the vMix fullscreen output)
+        because that one does not re-assert its own position."""
+        if self.isVisible():
+            self.raise_()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
+        self._raise_timer.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
+        self._raise_timer.stop()
+        super().hideEvent(event)
 
     # ------------------------------------------------------------------ internal
 

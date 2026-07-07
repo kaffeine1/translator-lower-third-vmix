@@ -7,7 +7,7 @@
 ; internal id kept stable for the install folder and exe filename.
 #define MyAppName "Traduttore Live"
 #define MyAppShortName "TranslatorLowerThird"
-#define MyAppVersion "0.2.1"
+#define MyAppVersion "0.2.2"
 #define MyAppPublisher "Michele Dipace"
 #define MyAppExeName "TranslatorLowerThird.exe"
 

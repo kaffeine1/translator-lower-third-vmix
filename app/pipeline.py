@@ -223,7 +223,18 @@ class TranslationPipeline:
     # ------------------------------------------------------------------ sink
 
     def _on_formatter_publish(self, text: str) -> None:
-        # invoked from the provider thread (final) or tick (partial): only enqueue
+        # invoked from the provider thread (final) or tick (partial): only enqueue.
+        # Keep only the freshest subtitle: with a slow/unreachable vMix (~4 s per
+        # failed attempt) the queue would otherwise back up and replay stale
+        # captions minutes late instead of showing the current one.
+        try:
+            while True:
+                stale = self._output_queue.get_nowait()
+                if stale is _OUTPUT_SENTINEL:  # never swallow the shutdown signal
+                    self._output_queue.put(stale)
+                    break
+        except queue.Empty:
+            pass
         self._output_queue.put(text)
         self._on_subtitle(text)
 

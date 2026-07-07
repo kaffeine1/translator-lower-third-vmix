@@ -209,6 +209,16 @@ L'overlay mostra lo **stesso testo** inviato a vMix e segue le stesse regole dei
 monitor mentre l'app è aperta, l'overlay si ri-posiziona automaticamente su uno
 schermo valido.
 
+Note importanti:
+
+- L'overlay resta visibile **anche sopra l'uscita Fullscreen di vMix** (si
+  riporta in primo piano automaticamente). Non può invece apparire sopra
+  applicazioni in *fullscreen esclusivo* (es. alcuni videogiochi o player).
+- I sottotitoli a schermo sono visibili **solo sul monitor fisico**: non entrano
+  nel programma, nello streaming né nella registrazione di vMix. Per avere i
+  sottotitoli dentro il video prodotto da vMix si usa il **titolo vMix**
+  (sottopancia), non l'overlay.
+
 ### vMix
 - **Host**: indirizzo di vMix (di norma `127.0.0.1` se sullo stesso PC).
 - **Porta**: porta dell'API HTTP di vMix (predefinita `8088`).

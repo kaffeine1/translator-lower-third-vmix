@@ -5,6 +5,32 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.2.2] — 2026-07-06
+
+Sottotitoli a schermo e titolo vMix ora funzionano insieme: collaudato l'uso
+contemporaneo di overlay e uscita Fullscreen di vMix.
+
+### Corretto
+
+- **Sottotitoli a schermo nascosti dall'uscita Fullscreen di vMix**: anche
+  l'uscita a schermo intero di vMix è una finestra "sempre in primo piano", e
+  tra due finestre di quel tipo vince l'ultima mostrata: aperto il fullscreen di
+  vMix dopo l'overlay, i sottotitoli continuavano a essere disegnati ma
+  restavano coperti. Ora l'overlay **si riporta in cima a ogni nuovo testo** e
+  con un controllo periodico (~1,5 s) finché è visibile — senza rubare il focus
+  e senza sfarfallio. Nota: i sottotitoli a schermo restano visibili solo sul
+  monitor fisico; **non entrano** nel programma/streaming/registrazione di vMix
+  (per quello si usa il titolo vMix).
+- **L'overlay poteva allargarsi oltre il bordo del monitor**: con una riga molto
+  lunga la finestra dell'overlay poteva crescere oltre lo schermo (fino a
+  sconfinare sul monitor accanto) per colpa di un minimo di layout non
+  aggiornato. Ora la superficie ha **dimensione fissa pari allo schermo scelto**
+  e il testo viene adattato dal ridimensionamento automatico del font.
+- **Sottotitoli vecchi riprodotti in ritardo con vMix lento/irraggiungibile**:
+  la coda verso vMix accumulava gli aggiornamenti (ogni tentativo fallito ~4 s)
+  e poi li riproduceva in sequenza, in ritardo. Ora viene inviato solo il
+  sottotitolo **più recente**.
+
 ## [0.2.1] — 2026-07-06
 
 Correzioni dopo il primo rilascio pubblico: un crash su configurazioni
@@ -184,6 +210,7 @@ Prima release MVP: dall'audio dal vivo al sottopancia tradotto in vMix.
 - Non è richiesto Python sul PC dell'operatore: tutto è incluso nell'installer.
 - I driver audio virtuali (es. VB-Cable) non sono inclusi né obbligatori.
 
+[0.2.2]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.2
 [0.2.1]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.1
 [0.2.0]: https://github.com/kaffeine1/translator-lower-third-vmix/releases/tag/v0.2.0
 [0.1.0]: https://github.com/kaffeine1/translator-lower-third-vmix
