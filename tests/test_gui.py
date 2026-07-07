@@ -807,3 +807,29 @@ def test_settings_dialog_worker_done_restores_buttons(qapp):
     dialog._on_worker_done(True, "fatto")
     assert not dialog.runtime_progress.isVisibleTo(dialog)
     assert dialog.runtime_status_label.text() == "fatto"
+
+
+def test_wizard_local_provider_shows_runtime_controls(qapp):
+    # choosing the local provider in the wizard must offer the component/model
+    # download right on the credentials page (no credentials to enter)
+    config = AppConfig()
+    config.provider = "local"
+    wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
+    page = wizard._credentials_page
+    page.initializePage()
+    assert page.runtime_status_label.isVisibleTo(page)
+    assert page.btn_download_models.isVisibleTo(page)
+    assert page._local_hint.isVisibleTo(page)
+    assert not page.runtime_progress.isVisibleTo(page)
+
+
+def test_wizard_cloud_provider_hides_runtime_controls(qapp):
+    config = AppConfig()
+    config.provider = "openai"
+    wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
+    page = wizard._credentials_page
+    page.initializePage()
+    assert not page.runtime_status_label.isVisibleTo(page)
+    assert not page.btn_download_models.isVisibleTo(page)
+    assert not page.btn_download_runtime.isVisibleTo(page)
+    assert not page._local_hint.isVisibleTo(page)

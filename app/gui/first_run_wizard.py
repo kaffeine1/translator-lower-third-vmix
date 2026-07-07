@@ -15,6 +15,7 @@ HTTP calls must never freeze the wizard.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import threading
 
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
+from app import local_runtime
 from app.audio.devices import AudioDevice
 from app.config.models import AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
@@ -45,7 +48,15 @@ logger = logging.getLogger("app.gui")
 
 class _CredentialsPage(QWizardPage):
     """Shows one field per credential the selected provider needs and saves them
-    to secure storage when advancing (so the following tests can use them)."""
+    to secure storage when advancing (so the following tests can use them). For
+    the local provider it offers the component/model download instead — the same
+    inline pattern as the Settings dialog (signals and slots on the host: a
+    child widget class carrying its own signals proved fragile at teardown)."""
+
+    # worker-thread -> GUI marshalling for the local-runtime downloads
+    _runtime_progress = Signal(int, int)  # done bytes, total bytes (0 = unknown)
+    _worker_status = Signal(str)
+    _worker_done = Signal(bool, str)  # ok, operator message
 
     def __init__(self, wizard: FirstRunWizard) -> None:
         super().__init__()
@@ -58,15 +69,53 @@ class _CredentialsPage(QWizardPage):
         self._form = QFormLayout()
         layout.addLayout(self._form)
         self._edits: dict[str, QLineEdit] = {}
+        # local provider: no credentials, but the heavy components/models may
+        # need downloading — same controls as in Settings, shown only for "local"
+        self._local_hint = QLabel(t("wizard.credentials.local_hint"))
+        self._local_hint.setWordWrap(True)
+        layout.addWidget(self._local_hint)
+        self.runtime_status_label = QLabel()
+        self.runtime_status_label.setWordWrap(True)
+        layout.addWidget(self.runtime_status_label)
+        size_mb = local_runtime.PACK_SIZE_BYTES // 1_000_000
+        size_text = f"{size_mb} MB" if size_mb else "1 GB"
+        self.btn_download_runtime = QPushButton(
+            t("settings.btn_download_runtime", size=size_text)
+        )
+        self.btn_download_runtime.setObjectName("btn_download_runtime")
+        layout.addWidget(self.btn_download_runtime)
+        self.btn_download_models = QPushButton(t("settings.btn_download_models"))
+        self.btn_download_models.setObjectName("btn_download_models")
+        layout.addWidget(self.btn_download_models)
+        self.runtime_progress = QProgressBar()
+        self.runtime_progress.setVisible(False)
+        layout.addWidget(self.runtime_progress)
+        layout.addStretch()
+        self.btn_download_runtime.clicked.connect(self._on_download_runtime)
+        self.btn_download_models.clicked.connect(self._on_download_models)
+        self._runtime_progress.connect(self._on_runtime_progress)
+        self._worker_status.connect(self.runtime_status_label.setText)
+        self._worker_done.connect(self._on_worker_done)
 
     def initializePage(self) -> None:  # noqa: N802 (Qt name)
         while self._form.rowCount():
             self._form.removeRow(0)
         self._edits.clear()
-        info = get_provider_info(self._wizard.provider_combo.currentData())
+        provider_id = self._wizard.provider_combo.currentData()
+        is_local = provider_id == "local"
+        self._local_hint.setVisible(is_local)
+        self.runtime_status_label.setVisible(is_local)
+        self.btn_download_models.setVisible(is_local)
+        self.runtime_progress.setVisible(False)
+        if is_local:
+            self._refresh_runtime_state()
+        else:
+            self.btn_download_runtime.setVisible(False)
+        info = get_provider_info(provider_id)
         credentials = info.credentials if info else ()
         if not credentials:
-            self._form.addRow(QLabel(t("wizard.credentials.none")))
+            if not is_local:  # for "local" the download controls explain the setup
+                self._form.addRow(QLabel(t("wizard.credentials.none")))
             return
         for cred in credentials:
             edit = QLineEdit()
@@ -74,6 +123,93 @@ class _CredentialsPage(QWizardPage):
                 edit.setEchoMode(QLineEdit.EchoMode.Password)
             self._form.addRow(t(cred.label_key), edit)
             self._edits[cred.account] = edit
+
+    # ---------------------------------------------------------- local runtime
+
+    @staticmethod
+    def _local_components_available() -> bool:
+        """True when the heavy local packages are importable (runtime pack
+        active, or a dev environment with them installed)."""
+        return importlib.util.find_spec("faster_whisper") is not None
+
+    def _refresh_runtime_state(self) -> None:
+        available = self._local_components_available()
+        self.runtime_status_label.setText(
+            t("settings.runtime_status_present")
+            if available
+            else t("settings.runtime_status_absent")
+        )
+        self.btn_download_runtime.setVisible(not available)
+        self.btn_download_models.setEnabled(available)
+
+    def _on_download_runtime(self) -> None:
+        self.btn_download_runtime.setEnabled(False)
+        self.btn_download_models.setEnabled(False)
+        self.runtime_progress.setVisible(True)
+        self.runtime_progress.setRange(0, 0)  # busy until the size is known
+
+        def worker() -> None:
+            try:
+                local_runtime.download_and_install(
+                    progress=lambda done, total: self._runtime_progress.emit(done, total)
+                )
+            except local_runtime.LocalRuntimeError as exc:
+                self._worker_done.emit(False, str(exc))
+                return
+            except Exception:
+                logger.exception("Installazione runtime locale fallita")
+                self._worker_done.emit(False, t("runtime.download_failed"))
+                return
+            self._worker_done.emit(True, t("settings.runtime_ready"))
+
+        threading.Thread(target=worker, daemon=True, name="runtime-download").start()
+
+    def _on_download_models(self) -> None:
+        self.btn_download_runtime.setEnabled(False)
+        self.btn_download_models.setEnabled(False)
+        self.runtime_progress.setVisible(True)
+        self.runtime_progress.setRange(0, 0)  # model downloads: busy indicator
+        config = self._wizard.result_config()
+        local_model = config.local_model
+        source = config.source_language
+        target = config.target_language
+
+        def worker() -> None:
+            try:
+                local_runtime.download_models(
+                    local_model, source, target, status=self._worker_status.emit
+                )
+            except local_runtime.LocalRuntimeError as exc:
+                self._worker_done.emit(False, str(exc))
+                return
+            except Exception:
+                logger.exception("Download modelli locali fallito")
+                self._worker_done.emit(False, t("runtime.download_failed"))
+                return
+            self._worker_done.emit(True, t("settings.models_ready"))
+
+        threading.Thread(target=worker, daemon=True, name="models-download").start()
+
+    def _on_runtime_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            self.runtime_progress.setRange(0, max(1, total // 1_000_000))
+            self.runtime_progress.setValue(done // 1_000_000)
+            self.runtime_status_label.setText(
+                t(
+                    "settings.runtime_downloading",
+                    done=done // 1_000_000,
+                    total=total // 1_000_000,
+                )
+            )
+        if total and done >= total:
+            self._worker_status.emit(t("settings.runtime_extracting"))
+
+    def _on_worker_done(self, ok: bool, message: str) -> None:
+        self.runtime_progress.setVisible(False)
+        self.btn_download_runtime.setEnabled(True)
+        self.btn_download_models.setEnabled(True)
+        self._refresh_runtime_state()
+        self.runtime_status_label.setText(message)
 
     def validatePage(self) -> bool:  # noqa: N802 (Qt name)
         # persist entered credentials so the provider/vMix tests can use them

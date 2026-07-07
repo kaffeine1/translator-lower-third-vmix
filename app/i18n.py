@@ -128,6 +128,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "wizard.credentials.title": "2. Credenziali del provider",
         "wizard.credentials.hint": "Inserisci le credenziali richieste dal provider scelto. Vengono salvate in modo sicuro in Windows, mai in file di testo.",
         "wizard.credentials.none": "Il provider selezionato non richiede credenziali.",
+        "wizard.credentials.local_hint": "Il provider locale non richiede credenziali, ma ha bisogno dei componenti aggiuntivi e dei modelli. Puoi scaricarli e attivarli adesso (serve Internet solo per questo download; poi funziona offline):",
         "wizard.audio.title": "4. Scegli l'ingresso audio",
         "wizard.audio.input_label": "Ingresso audio:",
         "wizard.key.title": "2. Inserisci la chiave API",
