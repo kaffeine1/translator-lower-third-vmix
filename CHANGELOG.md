@@ -9,6 +9,15 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Gestione dello spazio dei modelli locali**: durante il download dei modelli
+  lo stato mostra i **MB scaricati in tempo reale** (un modello grande come
+  `large-v3`, ~3 GB, prima sembrava bloccato dietro una barra senza progresso);
+  lo stato indica se i modelli per la selezione corrente sono **già scaricati o
+  da scaricare**, e il nuovo pulsante **"Libera spazio: rimuovi i modelli
+  scaricati…"** li elimina dopo l'uso (con conferma e spazio liberato;
+  riscaricabili in qualsiasi momento). Il **wizard** ora chiede anche lingua
+  sorgente/destinazione e, per il provider Locale, il modello vocale — e scarica
+  esattamente quella selezione.
 - **Download e attivazione automatici dei componenti locali** dalle
   Impostazioni: l'installer resta leggero, ma chi vuole provare i provider
   locali (Faster-Whisper → MarianMT) ora ha un pulsante *"Scarica e attiva i

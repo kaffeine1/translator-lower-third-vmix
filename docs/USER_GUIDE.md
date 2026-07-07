@@ -311,8 +311,14 @@ Dettagli sulle credenziali:
 > componenti locali"**: un download una tantum (~235 MB, ~1,2 GB su disco) che
 > viene installato automaticamente nel profilo utente e attivato subito, senza
 > reinstallare l'app. Poi **"Scarica ora i modelli per le lingue configurate"**
-> pre-scarica i modelli, così il primo START è immediato. Serve Internet solo
-> per questi download; dopo, i provider locali funzionano **offline**.
+> pre-scarica i modelli, così il primo START è immediato (con l'avanzamento in
+> MB durante il download). Serve Internet solo per questi download; dopo, i
+> provider locali funzionano **offline**.
+>
+> I modelli occupano da decine di MB (tiny) a ~3 GB (large-v3): dopo l'evento,
+> **"Libera spazio: rimuovi i modelli scaricati…"** li elimina dal disco (con
+> conferma e riepilogo dello spazio liberato). Potrai riscaricarli in qualsiasi
+> momento; non farlo mentre una traduzione locale è in corso.
 >
 > In alternativa (per sviluppatori): esegui l'app dal codice sorgente con i
 > pacchetti di `requirements-optional.txt` installati — doppio clic su

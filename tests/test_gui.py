@@ -877,3 +877,32 @@ def test_settings_models_state_reflects_selection(qapp, monkeypatch):
     monkeypatch.setattr(lr, "models_cached", lambda *a, **k: True)
     dialog._refresh_models_state()
     assert "già scaricati" in dialog.runtime_status_label.text()
+
+
+def test_settings_remove_models_button_state_and_flow(qapp, monkeypatch, tmp_path):
+    # after the event the models can be removed to free disk space; the button
+    # is enabled only when there is something to remove
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub-vuota"))
+    dialog = SettingsDialog(AppConfig(), [])
+    assert not dialog.btn_remove_models.isEnabled()  # nothing downloaded
+
+    # with a fake downloaded model: confirm -> removal -> freed message
+    from app import local_runtime as lr
+
+    fake = lr.DownloadedModel("Systran/faster-whisper-tiny", tmp_path, 75_000_000)
+    monkeypatch.setattr(lr, "downloaded_models", lambda: [fake])
+    monkeypatch.setattr(lr, "remove_downloaded_models", lambda: (75_000_000, []))
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    dialog._refresh_runtime_state()
+    assert dialog.btn_remove_models.isEnabled()
+    dialog._on_remove_models()
+    assert _process_until(
+        qapp, lambda: "liberato" in dialog.runtime_status_label.text().lower()
+    )
+    assert "75 MB" in dialog.runtime_status_label.text()

@@ -21,9 +21,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import shutil
 import sys
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.i18n import t
@@ -174,6 +176,67 @@ StatusCallback = Callable[[str], None]
 
 # throttle for the MB-progress status updates during model downloads
 _MODEL_PROGRESS_EVERY_S = 0.5
+
+
+# Only cache directories with these prefixes are OURS to manage/remove: the
+# HF cache may also hold models of other applications.
+_MODEL_DIR_PREFIXES = (
+    "models--Systran--faster-whisper-",
+    "models--Helsinki-NLP--opus-mt-",
+)
+
+
+@dataclass(frozen=True)
+class DownloadedModel:
+    repo: str
+    path: Path
+    size_bytes: int
+
+
+def _hf_cache_dir() -> Path:
+    """The Hugging Face hub cache directory (no hf import required)."""
+    env = os.environ.get("HF_HUB_CACHE")
+    if env:
+        return Path(env)
+    home = os.environ.get("HF_HOME")
+    if home:
+        return Path(home) / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+def downloaded_models() -> list[DownloadedModel]:
+    """The local-provider models currently in the cache, with their size."""
+    cache = _hf_cache_dir()
+    if not cache.is_dir():
+        return []
+    result: list[DownloadedModel] = []
+    for entry in sorted(cache.iterdir()):
+        if not entry.is_dir() or not entry.name.startswith(_MODEL_DIR_PREFIXES):
+            continue
+        size = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+        org, _, model = entry.name[len("models--") :].partition("--")
+        result.append(DownloadedModel(f"{org}/{model}", entry, size))
+    return result
+
+
+def remove_downloaded_models() -> tuple[int, list[str]]:
+    """Delete the local-provider models from the cache to free disk space.
+
+    They can be re-downloaded at any time. Returns (freed bytes, repos that
+    could NOT be removed — e.g. model files locked by a running translation).
+    """
+    freed = 0
+    failed: list[str] = []
+    for model in downloaded_models():
+        try:
+            shutil.rmtree(model.path)
+        except OSError:
+            logger.warning("Rimozione modello fallita: %s", model.repo)
+            failed.append(model.repo)
+            continue
+        logger.info("Modello rimosso: %s (%d MB)", model.repo, model.size_bytes // 1_000_000)
+        freed += model.size_bytes
+    return freed, failed
 
 
 def _progress_tqdm(status: StatusCallback | None, repo: str):

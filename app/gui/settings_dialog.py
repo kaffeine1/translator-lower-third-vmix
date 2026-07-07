@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -52,6 +53,13 @@ LANGUAGES = [
 PROVIDERS = [(info.display_name, info.id) for info in available_providers()]
 
 SYSTEM_DEFAULT_DEVICE = t("settings.system_default_device")
+
+
+def _format_size(size_bytes: int) -> str:
+    """Human size for the operator ('4,3 GB' / '862 MB')."""
+    if size_bytes >= 1_000_000_000:
+        return f"{size_bytes / 1_000_000_000:.1f} GB".replace(".", ",")
+    return f"{size_bytes // 1_000_000} MB"
 
 
 def _select_by_data(combo: QComboBox, data: object) -> None:
@@ -191,11 +199,17 @@ class SettingsDialog(QDialog):
         self.btn_download_models = QPushButton(t("settings.btn_download_models"))
         self.btn_download_models.setObjectName("btn_download_models")
         local_form.addRow(self.btn_download_models)
+        # models are hundreds of MB to GBs: after the event they can be removed
+        # (and re-downloaded any time)
+        self.btn_remove_models = QPushButton(t("settings.btn_remove_models"))
+        self.btn_remove_models.setObjectName("btn_remove_models")
+        local_form.addRow(self.btn_remove_models)
         self.runtime_progress = QProgressBar()
         self.runtime_progress.setVisible(False)
         local_form.addRow(self.runtime_progress)
         self.btn_download_runtime.clicked.connect(self._on_download_runtime)
         self.btn_download_models.clicked.connect(self._on_download_models)
+        self.btn_remove_models.clicked.connect(self._on_remove_models)
         self._runtime_progress.connect(self._on_runtime_progress)
         self._worker_status.connect(self.runtime_status_label.setText)
         self._worker_done.connect(self._on_worker_done)
@@ -396,6 +410,7 @@ class SettingsDialog(QDialog):
         )
         self.btn_download_runtime.setVisible(not available)
         self.btn_download_models.setEnabled(available)
+        self.btn_remove_models.setEnabled(bool(local_runtime.downloaded_models()))
         if available:
             self._refresh_models_state()
 
@@ -467,6 +482,40 @@ class SettingsDialog(QDialog):
             self._worker_done.emit(True, t("settings.models_ready"))
 
         threading.Thread(target=worker, daemon=True, name="models-download").start()
+
+    def _on_remove_models(self) -> None:
+        models = local_runtime.downloaded_models()
+        if not models:
+            return
+        total = sum(model.size_bytes for model in models)
+        answer = QMessageBox.question(
+            self,
+            t("settings.remove_models_title"),
+            t("settings.remove_models_confirm", count=len(models), size=_format_size(total)),
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.btn_download_models.setEnabled(False)
+        self.btn_remove_models.setEnabled(False)
+
+        def worker() -> None:
+            try:
+                freed, failed = local_runtime.remove_downloaded_models()
+            except Exception:
+                logger.exception("Rimozione modelli fallita")
+                self._worker_done.emit(False, t("runtime.download_failed"))
+                return
+            if failed:
+                message = t(
+                    "settings.remove_models_partial",
+                    size=_format_size(freed),
+                    names=", ".join(failed),
+                )
+            else:
+                message = t("settings.remove_models_done", size=_format_size(freed))
+            self._worker_done.emit(not failed, message)
+
+        threading.Thread(target=worker, daemon=True, name="models-remove").start()
 
     def _on_runtime_progress(self, done: int, total: int) -> None:
         if total > 0:

@@ -224,3 +224,54 @@ def test_progress_tqdm_ignores_non_byte_bars():
     bar.update(3)
     assert seen == []
     bar.close()
+
+
+# ------------------------------------------------------------------ model removal
+
+
+def _fake_cache(tmp_path, monkeypatch) -> object:
+    cache = tmp_path / "hub"
+    cache.mkdir()
+    monkeypatch.setenv("HF_HUB_CACHE", str(cache))
+    return cache
+
+
+def _fake_model(cache, dirname: str, size: int) -> None:
+    d = cache / dirname / "snapshots" / "abc"
+    d.mkdir(parents=True)
+    (d / "model.bin").write_bytes(b"x" * size)
+
+
+def test_downloaded_models_lists_only_ours_with_sizes(tmp_path, monkeypatch):
+    from app.local_runtime import downloaded_models
+
+    cache = _fake_cache(tmp_path, monkeypatch)
+    _fake_model(cache, "models--Systran--faster-whisper-large-v3", 3000)
+    _fake_model(cache, "models--Helsinki-NLP--opus-mt-it-en", 2000)
+    _fake_model(cache, "models--altra-app--modello-estraneo", 500)  # NOT ours
+
+    models = downloaded_models()
+    repos = {m.repo for m in models}
+    assert repos == {"Systran/faster-whisper-large-v3", "Helsinki-NLP/opus-mt-it-en"}
+    assert {m.size_bytes for m in models} == {3000, 2000}
+
+
+def test_remove_downloaded_models_frees_only_ours(tmp_path, monkeypatch):
+    from app.local_runtime import downloaded_models, remove_downloaded_models
+
+    cache = _fake_cache(tmp_path, monkeypatch)
+    _fake_model(cache, "models--Systran--faster-whisper-tiny", 1000)
+    _fake_model(cache, "models--altra-app--modello-estraneo", 500)
+
+    freed, failed = remove_downloaded_models()
+    assert freed == 1000
+    assert failed == []
+    assert downloaded_models() == []  # ours gone
+    assert (cache / "models--altra-app--modello-estraneo").exists()  # untouched
+
+
+def test_downloaded_models_empty_without_cache(tmp_path, monkeypatch):
+    from app.local_runtime import downloaded_models
+
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "inesistente"))
+    assert downloaded_models() == []
