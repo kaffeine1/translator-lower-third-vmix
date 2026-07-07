@@ -36,9 +36,9 @@ from PySide6.QtWidgets import (
 
 from app import local_runtime
 from app.audio.devices import AudioDevice
-from app.config.models import AppConfig
+from app.config.models import LOCAL_MODELS, AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
-from app.gui.settings_dialog import SYSTEM_DEFAULT_DEVICE, _select_by_data
+from app.gui.settings_dialog import LANGUAGES, SYSTEM_DEFAULT_DEVICE, _select_by_data
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 from app.services import AppServices
@@ -74,6 +74,15 @@ class _CredentialsPage(QWizardPage):
         self._local_hint = QLabel(t("wizard.credentials.local_hint"))
         self._local_hint.setWordWrap(True)
         layout.addWidget(self._local_hint)
+        # speech-model choice drives what "download models" fetches
+        self._local_form = QFormLayout()
+        self.local_model_combo = QComboBox()
+        for size in LOCAL_MODELS:
+            self.local_model_combo.addItem(size, size)
+        _select_by_data(self.local_model_combo, wizard._base_config.local_model)
+        self._local_model_label = QLabel(t("wizard.local.model_label"))
+        self._local_form.addRow(self._local_model_label, self.local_model_combo)
+        layout.addLayout(self._local_form)
         self.runtime_status_label = QLabel()
         self.runtime_status_label.setWordWrap(True)
         layout.addWidget(self.runtime_status_label)
@@ -96,6 +105,9 @@ class _CredentialsPage(QWizardPage):
         self._runtime_progress.connect(self._on_runtime_progress)
         self._worker_status.connect(self.runtime_status_label.setText)
         self._worker_done.connect(self._on_worker_done)
+        # a different speech model (or languages, from step 1) means a
+        # different download: keep the status hint truthful
+        self.local_model_combo.currentIndexChanged.connect(self._refresh_models_state)
 
     def initializePage(self) -> None:  # noqa: N802 (Qt name)
         while self._form.rowCount():
@@ -104,6 +116,8 @@ class _CredentialsPage(QWizardPage):
         provider_id = self._wizard.provider_combo.currentData()
         is_local = provider_id == "local"
         self._local_hint.setVisible(is_local)
+        self._local_model_label.setVisible(is_local)
+        self.local_model_combo.setVisible(is_local)
         self.runtime_status_label.setVisible(is_local)
         self.btn_download_models.setVisible(is_local)
         self.runtime_progress.setVisible(False)
@@ -141,6 +155,31 @@ class _CredentialsPage(QWizardPage):
         )
         self.btn_download_runtime.setVisible(not available)
         self.btn_download_models.setEnabled(available)
+        if available:
+            self._refresh_models_state()
+
+    def _refresh_models_state(self) -> None:
+        """Reflect whether the models for the current selection are already
+        downloaded (same behavior as the Settings dialog)."""
+        if not self._local_components_available():
+            return
+        config = self._wizard.result_config()
+        cached = local_runtime.models_cached(
+            config.local_model, config.source_language, config.target_language
+        )
+        if cached is None:
+            return
+        if cached:
+            self.runtime_status_label.setText(t("settings.models_state_present"))
+        else:
+            names = ", ".join(
+                local_runtime.required_model_repos(
+                    config.local_model, config.source_language, config.target_language
+                )
+            )
+            self.runtime_status_label.setText(
+                t("settings.models_state_missing", names=names)
+            )
 
     def _on_download_runtime(self) -> None:
         self.btn_download_runtime.setEnabled(False)
@@ -267,8 +306,19 @@ class FirstRunWizard(QWizard):
         for info in available_providers():
             self.provider_combo.addItem(info.display_name, info.id)
         _select_by_data(self.provider_combo, config.provider)
+        # spoken/subtitle languages: they drive the provider config AND which
+        # models the local-provider download fetches
+        self.source_combo = QComboBox()
+        self.target_combo = QComboBox()
+        for label, code in LANGUAGES:
+            self.source_combo.addItem(label, code)
+            self.target_combo.addItem(label, code)
+        _select_by_data(self.source_combo, config.source_language)
+        _select_by_data(self.target_combo, config.target_language)
         setup_form.addRow(t("wizard.setup.language_label"), self.lang_combo)
         setup_form.addRow(t("wizard.setup.provider_label"), self.provider_combo)
+        setup_form.addRow(t("wizard.setup.source_label"), self.source_combo)
+        setup_form.addRow(t("wizard.setup.target_label"), self.target_combo)
         self.addPage(setup_page)
 
         # 2. Credentials (dynamic, per selected provider)
@@ -394,6 +444,9 @@ class FirstRunWizard(QWizard):
         config = AppConfig.from_dict(self._base_config.to_dict())
         config.ui_language = self.lang_combo.currentData()
         config.provider = self.provider_combo.currentData()
+        config.source_language = self.source_combo.currentData()
+        config.target_language = self.target_combo.currentData()
+        config.local_model = self._credentials_page.local_model_combo.currentData()
         config.audio.device_id = self.device_combo.currentData()
         config.vmix.host = self.host_edit.text().strip()
         config.vmix.port = self.port_spin.value()

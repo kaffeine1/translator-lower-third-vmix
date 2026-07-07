@@ -174,3 +174,29 @@ def test_whisper_repo_naming():
 def test_pack_constants_are_consistent():
     # the URL must embed the pack version so a bump cannot desync them
     assert local_runtime.PACK_VERSION in local_runtime.PACK_URL
+
+
+def test_required_model_repos_pair_and_captioning():
+    from app.local_runtime import required_model_repos
+
+    assert required_model_repos("small", "it", "en") == [
+        "Systran/faster-whisper-small",
+        "Helsinki-NLP/opus-mt-it-en",
+    ]
+    # captioning-only: no translation model
+    assert required_model_repos("tiny", "it", "IT") == ["Systran/faster-whisper-tiny"]
+
+
+def test_models_cached_uses_checker_over_all_repos():
+    from app.local_runtime import models_cached
+
+    seen: list[str] = []
+
+    def checker(repo: str) -> bool:
+        seen.append(repo)
+        return True
+
+    assert models_cached("small", "es", "it", checker=checker) is True
+    assert seen == ["Systran/faster-whisper-small", "Helsinki-NLP/opus-mt-es-it"]
+    # one missing -> False
+    assert models_cached("small", "es", "it", checker=lambda r: "whisper" in r) is False

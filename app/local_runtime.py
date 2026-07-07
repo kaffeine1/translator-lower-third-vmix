@@ -178,6 +178,53 @@ def whisper_repo(model: str) -> str:
     return f"Systran/faster-whisper-{model}"
 
 
+def required_model_repos(
+    local_model: str, source_language: str, target_language: str
+) -> list[str]:
+    """The model repos the local pipeline needs for this configuration.
+
+    With source == target (captioning-only) the translation model is skipped.
+    """
+    repos = [whisper_repo(local_model)]
+    source = (source_language or "").strip().lower()
+    target = (target_language or "").strip().lower()
+    if source and target and source != target:
+        from app.providers.local_translate import default_model_name
+
+        repos.append(default_model_name(source, target))
+    return repos
+
+
+def models_cached(
+    local_model: str,
+    source_language: str,
+    target_language: str,
+    checker=None,
+) -> bool | None:
+    """Whether the models for this configuration are already downloaded.
+
+    Disk-only check (no network). Returns None when it cannot tell (runtime
+    components not installed) — callers should then simply say nothing.
+    """
+    if checker is None:
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError:
+            return None
+
+        def checker(repo: str) -> bool:
+            try:
+                snapshot_download(repo, local_files_only=True)
+                return True
+            except Exception:
+                return False
+
+    return all(
+        checker(repo)
+        for repo in required_model_repos(local_model, source_language, target_language)
+    )
+
+
 def download_models(
     local_model: str,
     source_language: str,
@@ -197,13 +244,7 @@ def download_models(
         except ImportError:
             raise LocalRuntimeError(t("runtime.not_installed")) from None
 
-    from app.providers.local_translate import default_model_name
-
-    repos = [whisper_repo(local_model)]
-    source = (source_language or "").strip().lower()
-    target = (target_language or "").strip().lower()
-    if source and target and source != target:
-        repos.append(default_model_name(source, target))
+    repos = required_model_repos(local_model, source_language, target_language)
     for repo in repos:
         if status is not None:
             status(t("runtime.downloading_model", name=repo))

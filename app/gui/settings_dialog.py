@@ -199,6 +199,11 @@ class SettingsDialog(QDialog):
         self._runtime_progress.connect(self._on_runtime_progress)
         self._worker_status.connect(self.runtime_status_label.setText)
         self._worker_done.connect(self._on_worker_done)
+        # changing the local model or the languages must be reflected in the
+        # status hint: the next "download models" fetches the NEW selection
+        self.local_model_combo.currentIndexChanged.connect(self._refresh_models_state)
+        self.source_combo.currentIndexChanged.connect(self._refresh_models_state)
+        self.target_combo.currentIndexChanged.connect(self._refresh_models_state)
         self._refresh_runtime_state()
         layout.addWidget(local_box)
 
@@ -391,6 +396,30 @@ class SettingsDialog(QDialog):
         )
         self.btn_download_runtime.setVisible(not available)
         self.btn_download_models.setEnabled(available)
+        if available:
+            self._refresh_models_state()
+
+    def _refresh_models_state(self) -> None:
+        """Reflect whether the models for the CURRENT model/language selection
+        are already downloaded: after changing the local model or the languages
+        it must be clear that the next download fetches the new selection."""
+        if not self._local_components_available():
+            return
+        local_model = self.local_model_combo.currentData()
+        source = self.source_combo.currentData()
+        target = self.target_combo.currentData()
+        cached = local_runtime.models_cached(local_model, source, target)
+        if cached is None:
+            return
+        if cached:
+            self.runtime_status_label.setText(t("settings.models_state_present"))
+        else:
+            names = ", ".join(
+                local_runtime.required_model_repos(local_model, source, target)
+            )
+            self.runtime_status_label.setText(
+                t("settings.models_state_missing", names=names)
+            )
 
     def _on_download_runtime(self) -> None:
         self.btn_download_runtime.setEnabled(False)

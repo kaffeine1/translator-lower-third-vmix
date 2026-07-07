@@ -833,3 +833,47 @@ def test_wizard_cloud_provider_hides_runtime_controls(qapp):
     assert not page.btn_download_models.isVisibleTo(page)
     assert not page.btn_download_runtime.isVisibleTo(page)
     assert not page._local_hint.isVisibleTo(page)
+
+
+def test_wizard_result_config_carries_languages_and_model(qapp):
+    # the wizard choices drive the config AND what the model download fetches
+    config = AppConfig()
+    config.provider = "local"
+    wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
+    _select = lambda combo, value: combo.setCurrentIndex(combo.findData(value))  # noqa: E731
+    _select(wizard.source_combo, "it")
+    _select(wizard.target_combo, "en")
+    _select(wizard._credentials_page.local_model_combo, "medium")
+    result = wizard.result_config()
+    assert result.source_language == "it"
+    assert result.target_language == "en"
+    assert result.local_model == "medium"
+
+
+def test_wizard_local_provider_shows_model_choice(qapp):
+    config = AppConfig()
+    config.provider = "local"
+    wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
+    page = wizard._credentials_page
+    page.initializePage()
+    assert page.local_model_combo.isVisibleTo(page)
+    assert page.local_model_combo.currentData() == config.local_model
+
+    # cloud provider: the model choice is hidden
+    wizard.provider_combo.setCurrentIndex(wizard.provider_combo.findData("openai"))
+    page.initializePage()
+    assert not page.local_model_combo.isVisibleTo(page)
+
+
+def test_settings_models_state_reflects_selection(qapp, monkeypatch):
+    # changing model/languages updates the hint: the next download fetches the
+    # NEW selection (this was invisible before and read as "does not download")
+    from app import local_runtime as lr
+
+    dialog = SettingsDialog(AppConfig(), [])
+    monkeypatch.setattr(lr, "models_cached", lambda *a, **k: False)
+    dialog._refresh_models_state()
+    assert "da scaricare" in dialog.runtime_status_label.text()
+    monkeypatch.setattr(lr, "models_cached", lambda *a, **k: True)
+    dialog._refresh_models_state()
+    assert "già scaricati" in dialog.runtime_status_label.text()
