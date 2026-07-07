@@ -200,3 +200,27 @@ def test_models_cached_uses_checker_over_all_repos():
     assert seen == ["Systran/faster-whisper-small", "Helsinki-NLP/opus-mt-es-it"]
     # one missing -> False
     assert models_cached("small", "es", "it", checker=lambda r: "whisper" in r) is False
+
+
+def test_progress_tqdm_reports_cumulative_megabytes():
+    # large models with only a busy bar look frozen: byte updates must reach
+    # the status callback as cumulative MB
+    from app.local_runtime import _progress_tqdm
+
+    seen: list[str] = []
+    cls = _progress_tqdm(seen.append, "Systran/faster-whisper-large-v3")
+    bar = cls(total=100, unit="B")
+    bar.update(7_000_000)
+    assert seen and "large-v3" in seen[-1] and "7 MB" in seen[-1]
+    bar.close()
+
+
+def test_progress_tqdm_ignores_non_byte_bars():
+    from app.local_runtime import _progress_tqdm
+
+    seen: list[str] = []
+    cls = _progress_tqdm(seen.append, "repo")
+    bar = cls(total=10, unit="it")  # file-count bar, not bytes
+    bar.update(3)
+    assert seen == []
+    bar.close()

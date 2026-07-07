@@ -172,6 +172,47 @@ def download_and_install(
 
 StatusCallback = Callable[[str], None]
 
+# throttle for the MB-progress status updates during model downloads
+_MODEL_PROGRESS_EVERY_S = 0.5
+
+
+def _progress_tqdm(status: StatusCallback | None, repo: str):
+    """A tqdm subclass for snapshot_download that reports cumulative MB.
+
+    Large models (large-v3 is ~3 GB) with only a busy indicator look frozen and
+    operators give up: routing hf's byte updates into the status callback shows
+    real movement. Console output is disabled (the frozen app has no stderr).
+    """
+    import time
+
+    from huggingface_hub.utils import tqdm as base_tqdm
+
+    state = {"bytes": 0, "last": 0.0}
+
+    class _StatusTqdm(base_tqdm):
+        def __init__(self, *args, **kwargs) -> None:
+            # captured before init: a disabled tqdm skips setting self.unit
+            self._reports_bytes = kwargs.get("unit") == "B"
+            kwargs["disable"] = True  # no console writing, we only count bytes
+            super().__init__(*args, **kwargs)
+
+        def update(self, n=1):
+            if status is not None and n and self._reports_bytes:
+                state["bytes"] += int(n)
+                now = time.monotonic()
+                if now - state["last"] >= _MODEL_PROGRESS_EVERY_S:
+                    state["last"] = now
+                    status(
+                        t(
+                            "runtime.downloading_model_mb",
+                            name=repo,
+                            mb=state["bytes"] // 1_000_000,
+                        )
+                    )
+            return super().update(n)
+
+    return _StatusTqdm
+
 
 def whisper_repo(model: str) -> str:
     """Hugging Face repo of the faster-whisper checkpoints (Systran)."""
@@ -240,16 +281,21 @@ def download_models(
     """
     if downloader is None:
         try:
-            from huggingface_hub import snapshot_download as downloader
+            from huggingface_hub import snapshot_download
         except ImportError:
             raise LocalRuntimeError(t("runtime.not_installed")) from None
+
+        def downloader(repo: str) -> None:
+            snapshot_download(repo, tqdm_class=_progress_tqdm(status, repo))
 
     repos = required_model_repos(local_model, source_language, target_language)
     for repo in repos:
         if status is not None:
             status(t("runtime.downloading_model", name=repo))
+        logger.info("Download modello avviato: %s", repo)
         try:
             downloader(repo)
         except Exception as exc:
             logger.warning("Download modello fallito (%s): %s", repo, type(exc).__name__)
             raise LocalRuntimeError(t("runtime.model_download_failed", name=repo)) from None
+        logger.info("Download modello completato: %s", repo)

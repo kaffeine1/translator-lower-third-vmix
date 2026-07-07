@@ -101,6 +101,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "runtime.archive_corrupt": "Il pacchetto scaricato non è un archivio valido. Riprova.",
         "runtime.not_installed": "Componenti locali non installati: scaricali prima con il pulsante qui sopra.",
         "runtime.downloading_model": "Scarico il modello {name}…",
+        "runtime.downloading_model_mb": "Scarico il modello {name}… {mb} MB",
         "runtime.model_download_failed": "Download del modello {name} non riuscito. Controlla la connessione e riprova.",
         "settings.group.subtitles": "Sottotitoli",
         "settings.label.max_chars": "Max caratteri per riga:",
