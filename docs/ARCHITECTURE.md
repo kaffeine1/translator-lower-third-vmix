@@ -218,8 +218,11 @@ required credentials are present (the SDKs are not run here).
 
 `FasterWhisperSpeechProvider` (`app/providers/local_whisper.py`) runs speech
 recognition offline: since Faster-Whisper has no streaming mode, its engine
-buffers PCM16 audio into `SEGMENT_SECONDS` chunks and transcribes each on a
-worker thread, emitting finals. `LocalMarianTranslationProvider`
+buffers PCM16 audio and cuts **silence-aware segments** (a segment ends at a
+speech pause; a hard cap of `MAX_SEGMENT_SECONDS` bounds latency during
+unbroken speech, cutting at the quietest recent frame), transcribing each on a
+worker thread and emitting finals. All-silent segments are skipped to avoid
+Whisper's silence hallucinations. `LocalMarianTranslationProvider`
 (`app/providers/local_translate.py`) translates text with a Hugging Face
 OPUS-MT model (name derived from the language pair, overridable). Both use an
 injectable model factory (fake in tests) and lazy-import the heavy optional

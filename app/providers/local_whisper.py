@@ -26,8 +26,15 @@ from app.providers.base import ProviderConfig, ProviderError, SpeechProvider
 
 logger = logging.getLogger("app.providers.local_whisper")
 
-# how much audio to accumulate before transcribing one segment
-SEGMENT_SECONDS = 4.0
+# Silence-aware segmentation: cut at speech pauses instead of at a fixed
+# interval, so words are no longer bisected at segment boundaries (the main
+# source of lost words in live use).
+MIN_SEGMENT_SECONDS = 1.0  # Whisper hallucinates on sub-second clips
+MAX_SEGMENT_SECONDS = 6.0  # hard latency cap during unbroken speech
+SILENCE_WINDOW_SECONDS = 0.4  # inter-phrase pause length that triggers a cut
+FRAME_SECONDS = 0.03  # RMS frame: 480 samples / 960 bytes at 16 kHz (sample-aligned)
+SILENCE_RMS = 0.01  # ~ -40 dBFS on normalized PCM16
+IDLE_FLUSH_SECONDS = 1.0  # capture stalled/stopped: flush the trailing audio fast
 # hard cap on the audio backlog: if transcription is slower than realtime (common
 # on CPU) the oldest audio is dropped rather than growing memory without bound
 MAX_BUFFER_SECONDS = 30.0
@@ -94,13 +101,17 @@ class _WhisperEngine:
     """Buffers PCM16 audio and transcribes segments on a worker thread.
 
     Faster-Whisper has no live-streaming mode, so the stream is cut into
-    SEGMENT_SECONDS chunks and each is transcribed (emitted as a final). The
-    model is loaded on the worker thread (not in connect()) because the first
-    load can download hundreds of MB and take tens of seconds — doing it here
-    keeps connect() fast so START does not time out. The audio backlog is
-    capped (drop-oldest) so slow CPU transcription cannot exhaust memory, and a
-    trailing chunk shorter than a full segment is flushed after a short silence
-    so the last words are not lost."""
+    segments and each is transcribed (emitted as a final). Segmentation is
+    silence-aware: a segment ends at a speech pause (SILENCE_WINDOW_SECONDS of
+    frames under SILENCE_RMS), so words are not bisected at boundaries; during
+    unbroken speech a hard cap (MAX_SEGMENT_SECONDS) cuts at the quietest
+    recent frame. All-silent segments are skipped (Whisper hallucinates text on
+    silence). The model is loaded on the worker thread (not in connect())
+    because the first load can download hundreds of MB and take tens of
+    seconds — doing it here keeps connect() fast so START does not time out.
+    The audio backlog is capped (drop-oldest) so slow CPU transcription cannot
+    exhaust memory, and trailing audio is flushed once the capture goes idle so
+    the last words are not lost."""
 
     def __init__(
         self,
@@ -125,7 +136,13 @@ class _WhisperEngine:
         self._on_final = on_final
         self._on_error = on_error
         self._model = None  # loaded lazily on the worker thread
-        self._segment_bytes = int(sample_rate * SEGMENT_SECONDS) * 2  # PCM16 = 2 B/sample
+        # PCM16 = 2 B/sample; every cut is a multiple of _frame_bytes, so it is
+        # always sample-aligned
+        self._frame_bytes = int(sample_rate * FRAME_SECONDS) * 2
+        self._frame_samples = int(sample_rate * FRAME_SECONDS)
+        self._min_segment_bytes = int(sample_rate * MIN_SEGMENT_SECONDS) * 2
+        self._max_segment_bytes = int(sample_rate * MAX_SEGMENT_SECONDS) * 2
+        self._silence_frames = round(SILENCE_WINDOW_SECONDS / FRAME_SECONDS)
         self._max_bytes = int(sample_rate * MAX_BUFFER_SECONDS) * 2
         self._buffer = bytearray()
         self._lock = threading.Lock()
@@ -152,15 +169,64 @@ class _WhisperEngine:
     def stop(self) -> None:
         self._closed = True
 
+    def _frame_rms(self, data: bytes):
+        """Per-frame normalized RMS (0..1) over the full 30 ms frames of ``data``."""
+        np = self._np
+        n = len(data) // self._frame_bytes
+        if n == 0:
+            return np.zeros(0, dtype="float32")
+        samples = np.frombuffer(data[: n * self._frame_bytes], dtype="<i2")
+        frames = samples.reshape(n, self._frame_samples).astype("float32")
+        return np.sqrt(np.mean(frames * frames, axis=1)) / 32768.0
+
+    def _is_silent(self, segment: bytes) -> bool:
+        """True when no frame of the segment reaches speech level (gates the
+        'subtitles by...' style hallucinations Whisper produces on silence)."""
+        rms = self._frame_rms(segment)
+        return rms.size == 0 or float(rms.max()) < SILENCE_RMS
+
     def _take_segment(self) -> bytes | None:
+        # everything under the lock: push() deletes from the buffer front, so
+        # no index may be computed outside it (the RMS scan on <=6 s of audio
+        # costs microseconds)
         with self._lock:
-            if len(self._buffer) >= self._segment_bytes:
-                segment = bytes(self._buffer[: self._segment_bytes])
-                del self._buffer[: self._segment_bytes]
-                return segment
-            # trailing audio after a silence: flush it even if shorter
+            np = self._np
+            if len(self._buffer) >= self._min_segment_bytes:
+                rms = self._frame_rms(bytes(self._buffer))
+                silent = rms < SILENCE_RMS
+                # pause cut: first window of SILENCE_WINDOW_SECONDS fully silent
+                # frames whose start honors the minimum segment length; keep the
+                # trailing pause in the segment (helps Whisper close the phrase)
+                start = -(-self._min_segment_bytes // self._frame_bytes)  # ceil
+                window = self._silence_frames
+                if silent.size >= start + window:
+                    runs = np.convolve(
+                        silent.astype("int32"), np.ones(window, dtype="int32"), "valid"
+                    )
+                    candidates = np.nonzero(runs[start:] == window)[0]
+                    if candidates.size:
+                        cut = (start + int(candidates[0]) + window) * self._frame_bytes
+                        segment = bytes(self._buffer[:cut])
+                        del self._buffer[:cut]
+                        return segment
+                # hard cap during unbroken speech: cut at the quietest frame of
+                # the last second before the cap (the closest thing to a pause).
+                # The LAST minimal frame is chosen so uniform audio cuts at the
+                # cap itself, not one second early.
+                if len(self._buffer) >= self._max_segment_bytes:
+                    max_frames = self._max_segment_bytes // self._frame_bytes
+                    lookback = round(1.0 / FRAME_SECONDS)
+                    tail = rms[max_frames - lookback : max_frames]
+                    j = (max_frames - 1) - int(np.argmin(tail[::-1]))
+                    cut = (j + 1) * self._frame_bytes
+                    segment = bytes(self._buffer[:cut])
+                    del self._buffer[:cut]
+                    return segment
+            # capture stalled/stopped: flush the trailing audio quickly (while
+            # capture runs, push() delivers silent PCM continuously, so idle
+            # means the stream stopped — speaker pauses are the cut above)
             idle = time.monotonic() - self._last_push
-            if self._buffer and idle >= SEGMENT_SECONDS:
+            if self._buffer and idle >= IDLE_FLUSH_SECONDS:
                 segment = bytes(self._buffer)
                 self._buffer.clear()
                 return segment
@@ -170,7 +236,26 @@ class _WhisperEngine:
         audio = (
             self._np.frombuffer(segment, dtype=self._np.int16).astype("float32") / 32768.0
         )
-        segments, _info = self._model.transcribe(audio, language=self._language)
+        # live-tuned decoding: greedy beam and no temperature fallback keep CPU
+        # cost ~realtime (fewer backlog drops); conditioning off + thresholds +
+        # VAD suppress the repetition/hallucination failure modes of small
+        # models on chunked live audio
+        segments, _info = self._model.transcribe(
+            audio,
+            language=self._language,
+            beam_size=1,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.5,
+            log_prob_threshold=-0.7,
+            vad_filter=True,
+            vad_parameters={
+                "threshold": 0.4,
+                "min_silence_duration_ms": 500,
+                "speech_pad_ms": 200,
+                "min_speech_duration_ms": 250,
+            },
+        )
         text = " ".join(seg.text.strip() for seg in segments).strip()
         if text and not self._closed:
             self._on_final(text)
@@ -188,6 +273,8 @@ class _WhisperEngine:
             if segment is None:
                 time.sleep(0.1)
                 continue
+            if self._is_silent(segment):
+                continue  # nothing to transcribe (also avoids hallucinated text)
             try:
                 self._transcribe(segment)
             except Exception:

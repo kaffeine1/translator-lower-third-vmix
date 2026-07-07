@@ -468,3 +468,146 @@ def test_composed_different_languages_still_translate():
         return finals
 
     assert asyncio.run(run()) == ["BUONASERA"]
+
+
+# ---------------------------------------------------------------- silence-aware segmentation
+
+
+def _engine(sample_rate: int = 16000):
+    from app.providers.local_whisper import _WhisperEngine
+
+    return _WhisperEngine(
+        lambda name, device: object(),  # model never built (thread not started)
+        model="small",
+        device="cpu",
+        sample_rate=sample_rate,
+        language="it",
+        on_partial=lambda t: None,
+        on_final=lambda t: None,
+        on_error=lambda t: None,
+    )
+
+
+def _pcm(seconds: float, amplitude: int, sample_rate: int = 16000) -> bytes:
+    import numpy as np
+
+    n = int(sample_rate * seconds)
+    return np.full(n, amplitude, dtype="<i2").tobytes()
+
+
+def test_take_segment_none_when_short_and_not_idle():
+    engine = _engine()
+    engine.push(_pcm(0.5, 8000))
+    assert engine._take_segment() is None
+
+
+def test_take_segment_cuts_at_pause():
+    # 2s speech + 0.6s pause + 2s speech: the cut must land inside the pause,
+    # never bisecting the second phrase
+    engine = _engine()
+    pushed = _pcm(2.0, 8000) + _pcm(0.6, 0) + _pcm(2.0, 8000)
+    engine.push(pushed)
+    segment = engine._take_segment()
+    assert segment is not None
+    assert len(segment) % engine._frame_bytes == 0  # sample-aligned cut
+    assert len(_pcm(2.0, 8000)) < len(segment) <= len(_pcm(2.6, 8000))
+    assert segment + bytes(engine._buffer) == pushed  # no bytes lost
+
+
+def test_take_segment_ignores_pause_before_min_segment():
+    # a pause before MIN_SEGMENT_SECONDS must not produce a degenerate cut:
+    # the cut lands in the SECOND pause
+    engine = _engine()
+    engine.push(
+        _pcm(0.3, 8000) + _pcm(0.6, 0) + _pcm(1.5, 8000) + _pcm(0.6, 0) + _pcm(0.5, 8000)
+    )
+    segment = engine._take_segment()
+    assert segment is not None
+    assert len(segment) >= engine._min_segment_bytes
+    assert len(segment) > len(_pcm(2.4, 8000))  # beyond the second phrase
+
+
+def test_take_segment_hard_cap_cuts_at_quietest_frame():
+    # unbroken speech with a single 30ms dip at 5.5s: the hard cap must cut
+    # there (the closest thing to a pause), not mid-word at the cap itself
+    engine = _engine()
+    audio = bytearray(_pcm(7.0, 8000))
+    dip = _pcm(0.03, 100)
+    start = len(_pcm(5.5, 8000))
+    audio[start : start + len(dip)] = dip
+    engine.push(bytes(audio))
+    segment = engine._take_segment()
+    assert segment is not None
+    assert len(segment) <= engine._max_segment_bytes
+    cut_seconds = len(segment) / 32000.0
+    assert abs(cut_seconds - 5.5) <= 0.06  # within ~a frame of the dip
+
+
+def test_take_segment_hard_cap_without_dip():
+    # uniform unbroken speech: cut at the cap itself (not a second early)
+    engine = _engine()
+    engine.push(_pcm(7.0, 8000))
+    segment = engine._take_segment()
+    assert segment is not None
+    assert engine._max_segment_bytes - engine._frame_bytes <= len(segment)
+    assert len(segment) <= engine._max_segment_bytes
+
+
+def test_idle_flush_flushes_trailing_audio():
+    import time as time_mod
+
+    from app.providers.local_whisper import IDLE_FLUSH_SECONDS
+
+    engine = _engine()
+    pushed = _pcm(0.5, 8000)
+    engine.push(pushed)
+    engine._last_push = time_mod.monotonic() - IDLE_FLUSH_SECONDS - 0.1
+    segment = engine._take_segment()
+    assert segment == pushed
+    assert not engine._buffer
+
+
+def test_segments_conserve_bytes():
+    # strongest regression guard: every pushed byte comes out in exactly one
+    # segment (speech with pauses, then an idle flush for the tail)
+    import time as time_mod
+
+    from app.providers.local_whisper import IDLE_FLUSH_SECONDS
+
+    engine = _engine()
+    pushed = b"".join(_pcm(2.0, 8000) + _pcm(0.6, 0) for _ in range(5))
+    engine.push(pushed)
+    segments = []
+    while True:
+        segment = engine._take_segment()
+        if segment is None:
+            break
+        segments.append(segment)
+    engine._last_push = time_mod.monotonic() - IDLE_FLUSH_SECONDS - 0.1
+    tail = engine._take_segment()
+    if tail:
+        segments.append(tail)
+    assert b"".join(segments) == pushed
+
+
+def test_silence_gate():
+    engine = _engine()
+    assert engine._is_silent(_pcm(1.0, 0)) is True
+    assert engine._is_silent(_pcm(1.0, 8000)) is False
+
+
+def test_transcribe_passes_live_tuned_options():
+    captured = {}
+
+    class StubModel:
+        def transcribe(self, audio, **kwargs):
+            captured.update(kwargs)
+            return [], None
+
+    engine = _engine()
+    engine._model = StubModel()
+    engine._transcribe(_pcm(2.0, 8000))
+    assert captured["vad_filter"] is True
+    assert captured["condition_on_previous_text"] is False
+    assert captured["beam_size"] == 1
+    assert captured["temperature"] == 0.0

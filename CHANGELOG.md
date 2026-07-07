@@ -7,6 +7,20 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+### Migliorato
+
+- **Riconoscimento locale: molte meno parole perse.** Il motore Faster-Whisper
+  tagliava l'audio ogni 4 secondi fissi: le parole a cavallo del taglio venivano
+  spezzate o perse a ogni confine. Ora i segmenti terminano **sulle pause del
+  parlato** (rilevate via energia del segnale), con un tetto di 6 s durante il
+  parlato continuo (tagliando comunque nel punto più silenzioso). In più: i
+  segmenti di solo silenzio vengono scartati (eliminati i testi "allucinati"
+  tipo *"Sottotitoli a cura di…"*) e la decodifica è tarata per il live su CPU
+  (beam greedy, niente retry a temperatura alta, filtro VAD) — più veloce e
+  senza loop di ripetizione. Sullo stesso audio di prova: prima 4 frammenti con
+  parole storpiate ai confini, ora 3 sottotitoli che coincidono con le 3 frasi
+  pronunciate.
+
 ### Aggiunto
 
 - **Sottotitolazione senza traduzione** (provider composti): impostando la
