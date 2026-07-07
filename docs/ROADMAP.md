@@ -596,11 +596,12 @@ Automatic VB-Cable installation
 
 ## v1.1 — Provider Architecture Upgrade
 
-> **In progress (2026-07-04):** provider registry (`app/providers/registry.py`),
-> GUI provider selector with explicit Demo mode, and the separate
-> `SpeechProvider`/`TranslationProvider` interfaces with a
-> `ComposedRealtimeProvider` adapter (`app/providers/composed.py`) are done.
-> Still to do: provider-specific settings panels, then the v1.2 cloud providers.
+> **Status: ✅ completed 2026-07-04** — provider registry
+> (`app/providers/registry.py`), GUI provider selector with explicit Demo mode,
+> separate `SpeechProvider`/`TranslationProvider` interfaces with a
+> `ComposedRealtimeProvider` adapter (`app/providers/composed.py`), and
+> provider-specific settings: dynamic credential fields per provider plus the
+> local model/device panel.
 
 ### Goal
 
@@ -627,14 +628,14 @@ Provider-specific settings panels
 
 ## v1.2 — Alternative Cloud Providers
 
-> **In progress (2026-07-04):** `DeepLTranslationProvider` (translation),
-> `GoogleSpeechProvider` and `AzureSpeechProvider` (cloud STT) implemented —
-> vendor SDKs behind injectable engine factories (optional deps, lazy import),
-> mocked tests, live gated on their API keys + `RUN_LIVE_TESTS=1`. Composed
-> pipelines (e.g. Google/Azure Speech → DeepL) are buildable via
-> `create_composed_provider`. **Remaining:** GUI multi-credential settings +
-> exposing the composed cloud pipelines in the provider selector so an operator
-> can actually pick and run them; real end-to-end validation with vendor keys.
+> **Status: ✅ mostly completed 2026-07-04** — `DeepLTranslationProvider`
+> (translation), `GoogleSpeechProvider` and `AzureSpeechProvider` (cloud STT)
+> implemented (vendor SDKs behind injectable engine factories, optional deps,
+> lazy import, mocked tests, live gated on API keys + `RUN_LIVE_TESTS=1`); the
+> composed pipelines "Google Speech → DeepL" and "Azure Speech → DeepL" are
+> selectable from the GUI with per-provider dynamic credential fields stored
+> securely. **Remaining:** Google Translate / Azure Translator as alternative
+> translation engines, and a real end-to-end validation with vendor keys.
 
 ### Goal
 
@@ -669,13 +670,15 @@ OpenAI realtime → vMix
 
 ## v1.3 — Local Provider Mode
 
-> **Started (2026-07-04):** `FasterWhisperSpeechProvider` (local STT) and
-> `LocalMarianTranslationProvider` (local MT) implemented with injectable
-> model factories, lazy optional imports, and mocked tests. Registered as the
-> composed realtime pipeline "Locale (Faster-Whisper → MarianMT)" (no
-> credentials). Model/device are configurable in Settings with a hardware note.
-> Remaining: real end-to-end validation on a GPU machine, and a latency
-> benchmark tool.
+> **Status: ✅ core completed 2026-07-05** — `FasterWhisperSpeechProvider`
+> (local STT) and `LocalMarianTranslationProvider` (local MT) implemented with
+> injectable model factories, lazy optional imports, and mocked tests.
+> Registered as the composed realtime pipeline "Locale (Faster-Whisper →
+> MarianMT)" (no credentials); model (tiny…large-v3) and device (CPU/CUDA) are
+> configurable in Settings with a hardware note; `Test API` verifies the
+> optional packages. **Remaining:** NLLB/M2M100 as multilingual translation
+> models, a latency benchmark tool, and a real end-to-end validation on a GPU
+> machine.
 
 ### Goal
 
