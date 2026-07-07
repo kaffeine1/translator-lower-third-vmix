@@ -32,19 +32,59 @@ from app.i18n import t
 
 logger = logging.getLogger("app.local_runtime")
 
-# Versioned runtime pack (Python 3.14 x64, CPU torch). Bump PACK_VERSION when
-# publishing a new asset; old installs are ignored thanks to the versioned dir.
-PACK_VERSION = "py314-cpu-1"
-PACK_URL = (
-    "https://github.com/kaffeine1/translator-lower-third-vmix/releases/download/"
-    f"local-runtime-{PACK_VERSION}/local-runtime-{PACK_VERSION}.zip"
-)
-PACK_SHA256 = "96c88e1878b7bb13f32a069b6f8315131153fa6b4d3718b633f48a3b4fd3c1e2"
-PACK_SIZE_BYTES = 235_884_766  # informative, for the progress bar before headers arrive
+# Versioned runtime packs (Python 3.14 x64). One per device: the CPU pack is
+# torch-cpu + CTranslate2 (CPU); the CUDA pack adds the NVIDIA libraries so
+# faster-whisper runs on GPU without a system CUDA install. Bump the version
+# when publishing a new asset; old installs are ignored thanks to the versioned
+# install directory (the two packs coexist because their versions differ).
+@dataclass(frozen=True)
+class RuntimePack:
+    version: str
+    sha256: str
+    size_bytes: int
+    device: str  # "cpu" | "cuda"
+
+    @property
+    def url(self) -> str:
+        return (
+            "https://github.com/kaffeine1/translator-lower-third-vmix/releases/download/"
+            f"local-runtime-{self.version}/local-runtime-{self.version}.zip"
+        )
+
+
+PACKS: dict[str, RuntimePack] = {
+    "cpu": RuntimePack(
+        "py314-cpu-1",
+        "96c88e1878b7bb13f32a069b6f8315131153fa6b4d3718b633f48a3b4fd3c1e2",
+        235_884_766,
+        "cpu",
+    ),
+    "cuda": RuntimePack(
+        "py314-cu124-1",
+        "24b1694518072a7cad2fc43b92bd7513b39cb2c8628d0248390d670e5bc8dd5a",
+        1_200_018_280,
+        "cuda",
+    ),
+}
+
+
+def pack_for(device: str | None) -> RuntimePack:
+    return PACKS["cuda"] if (device or "").strip().lower() == "cuda" else PACKS["cpu"]
+
+
+# back-compat aliases: settings/wizard/tests still import these (CPU pack)
+PACK_VERSION = PACKS["cpu"].version
+PACK_URL = PACKS["cpu"].url
+PACK_SHA256 = PACKS["cpu"].sha256
+PACK_SIZE_BYTES = PACKS["cpu"].size_bytes
 
 # marker written after a fully verified extraction: a partial/aborted install
 # (crash mid-extract) is never mistaken for a working runtime
 _COMPLETE_MARKER = ".complete"
+
+# add_dll_directory handles must outlive the process, or the directories are
+# dropped when the returned cookies are garbage-collected
+_dll_dirs: list = []
 
 ProgressCallback = Callable[[int, int], None]  # (done_bytes, total_bytes or 0)
 
@@ -53,30 +93,42 @@ class LocalRuntimeError(Exception):
     """Runtime-pack error with an operator-readable message (Italian)."""
 
 
-def runtime_dir() -> Path:
-    """Versioned install directory under the user's local app data."""
+def runtime_dir(device: str = "cpu") -> Path:
+    """Versioned install directory (per device) under the user's local app data."""
     base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return Path(base) / "TranslatorLowerThird" / "local_runtime" / PACK_VERSION
+    return Path(base) / "TranslatorLowerThird" / "local_runtime" / pack_for(device).version
 
 
-def is_installed(directory: Path | None = None) -> bool:
-    directory = directory or runtime_dir()
+def is_installed(directory: Path | None = None, device: str = "cpu") -> bool:
+    directory = directory or runtime_dir(device)
     return (directory / _COMPLETE_MARKER).exists()
 
 
-def activate(directory: Path | None = None) -> bool:
+def activate(directory: Path | None = None, device: str = "cpu", *, dll_registrar=None) -> bool:
     """Append the runtime to sys.path (idempotent). True if active.
 
     Appended, not prepended: packages bundled in the frozen app (numpy, ...)
-    must keep winning over any copy inside the pack.
+    must keep winning over any copy inside the pack. For the CUDA pack, the
+    NVIDIA DLLs live under nvidia\\*\\bin (not next to ctranslate2.dll), so PATH
+    won't find them: register those directories with os.add_dll_directory before
+    the first `import faster_whisper` (activate runs at startup / end of install,
+    both before any provider import).
     """
-    directory = directory or runtime_dir()
+    pack = pack_for(device)
+    directory = directory or runtime_dir(device)
     if not is_installed(directory):
         return False
     path = str(directory)
     if path not in sys.path:
         sys.path.append(path)
         logger.info("Runtime locale attivato: %s", path)
+    if pack.device == "cuda" and (dll_registrar is not None or sys.platform == "win32"):
+        register = dll_registrar or getattr(os, "add_dll_directory", None)
+        if register is not None:
+            for bindir in sorted((directory / "nvidia").glob("*/bin")):
+                if bindir.is_dir():
+                    _dll_dirs.append(register(str(bindir)))
+                    logger.info("CUDA DLL dir registrata: %s", bindir)
     return True
 
 
@@ -121,25 +173,27 @@ def _sha256(path: Path) -> str:
 def download_and_install(
     progress: ProgressCallback | None = None,
     *,
+    device: str = "cpu",
     url: str | None = None,
     sha256: str | None = None,
     directory: Path | None = None,
     opener=None,
 ) -> Path:
-    """Download the runtime pack, verify it, extract it and activate it.
+    """Download the runtime pack for ``device``, verify it, extract, activate it.
 
     Raises LocalRuntimeError with an operator-readable message on failure.
     Safe to re-run: a complete install short-circuits, a partial one is redone.
     """
-    directory = directory or runtime_dir()
+    pack = pack_for(device)
+    directory = directory or runtime_dir(device)
     if is_installed(directory):
-        activate(directory)
+        activate(directory, device=device)
         return directory
-    url = url or PACK_URL
-    sha256 = PACK_SHA256 if sha256 is None else sha256
+    url = url or pack.url
+    sha256 = pack.sha256 if sha256 is None else sha256
 
     directory.mkdir(parents=True, exist_ok=True)
-    archive = directory.parent / f"local-runtime-{PACK_VERSION}.zip.part"
+    archive = directory.parent / f"local-runtime-{pack.version}.zip.part"
     try:
         try:
             _download(url, archive, progress, opener=opener)
@@ -161,11 +215,11 @@ def download_and_install(
         except zipfile.BadZipFile:
             raise LocalRuntimeError(t("runtime.archive_corrupt")) from None
 
-        (directory / _COMPLETE_MARKER).write_text(PACK_VERSION, encoding="utf-8")
+        (directory / _COMPLETE_MARKER).write_text(pack.version, encoding="utf-8")
     finally:
         archive.unlink(missing_ok=True)
 
-    activate(directory)
+    activate(directory, device=device)
     logger.info("Runtime locale installato in %s", directory)
     return directory
 

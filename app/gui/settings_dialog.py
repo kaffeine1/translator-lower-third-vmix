@@ -189,11 +189,7 @@ class SettingsDialog(QDialog):
         # one click away for the operator
         self.runtime_status_label = QLabel()
         local_form.addRow(self.runtime_status_label)
-        size_mb = local_runtime.PACK_SIZE_BYTES // 1_000_000
-        size_text = f"{size_mb} MB" if size_mb else "1 GB"
-        self.btn_download_runtime = QPushButton(
-            t("settings.btn_download_runtime", size=size_text)
-        )
+        self.btn_download_runtime = QPushButton()  # label set by _sync_runtime_button_label
         self.btn_download_runtime.setObjectName("btn_download_runtime")
         local_form.addRow(self.btn_download_runtime)
         self.btn_download_models = QPushButton(t("settings.btn_download_models"))
@@ -218,6 +214,10 @@ class SettingsDialog(QDialog):
         self.local_model_combo.currentIndexChanged.connect(self._refresh_models_state)
         self.source_combo.currentIndexChanged.connect(self._refresh_models_state)
         self.target_combo.currentIndexChanged.connect(self._refresh_models_state)
+        # switching CPU<->GPU changes which pack is needed (and its size): the
+        # status flips to "da scaricare" and the button shows the GPU size
+        self.local_device_combo.currentIndexChanged.connect(self._on_device_changed)
+        self._sync_runtime_button_label()
         self._refresh_runtime_state()
         layout.addWidget(local_box)
 
@@ -395,11 +395,32 @@ class SettingsDialog(QDialog):
 
     # ------------------------------------------------------------ local runtime
 
-    @staticmethod
-    def _local_components_available() -> bool:
-        """True when the heavy local packages are importable (runtime pack
-        active, or a dev environment with them installed)."""
-        return importlib.util.find_spec("faster_whisper") is not None
+    def _selected_device(self) -> str:
+        return self.local_device_combo.currentData()
+
+    def _local_components_available(self) -> bool:
+        """True when the components for the SELECTED device are usable: the pack
+        for that device is installed, or (dev environment, no pack at all) the
+        packages are importable. A CPU-only install must not read as ready when
+        GPU is selected — the GPU pack is a different download."""
+        device = self._selected_device()
+        if local_runtime.is_installed(device=device):
+            return True
+        no_pack = not local_runtime.is_installed(device="cpu") and not local_runtime.is_installed(
+            device="cuda"
+        )
+        if no_pack:
+            return importlib.util.find_spec("faster_whisper") is not None
+        return False
+
+    def _sync_runtime_button_label(self) -> None:
+        size_bytes = local_runtime.pack_for(self._selected_device()).size_bytes
+        size_text = f"{size_bytes // 1_000_000} MB" if size_bytes else "1 GB"
+        self.btn_download_runtime.setText(t("settings.btn_download_runtime", size=size_text))
+
+    def _on_device_changed(self) -> None:
+        self._sync_runtime_button_label()
+        self._refresh_runtime_state()
 
     def _refresh_runtime_state(self) -> None:
         available = self._local_components_available()
@@ -442,11 +463,13 @@ class SettingsDialog(QDialog):
         self.btn_remove_models.setEnabled(False)
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # busy until the size is known
+        device = self._selected_device()
 
         def worker() -> None:
             try:
                 local_runtime.download_and_install(
-                    progress=lambda done, total: self._runtime_progress.emit(done, total)
+                    device=device,
+                    progress=lambda done, total: self._runtime_progress.emit(done, total),
                 )
             except local_runtime.LocalRuntimeError as exc:
                 self._worker_done.emit(False, str(exc))

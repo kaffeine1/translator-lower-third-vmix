@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 
 from app import local_runtime
 from app.audio.devices import AudioDevice
-from app.config.models import LOCAL_MODELS, AppConfig
+from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
 from app.gui.settings_dialog import LANGUAGES, SYSTEM_DEFAULT_DEVICE, _select_by_data
 from app.i18n import available_locales, t
@@ -74,7 +74,7 @@ class _CredentialsPage(QWizardPage):
         self._local_hint = QLabel(t("wizard.credentials.local_hint"))
         self._local_hint.setWordWrap(True)
         layout.addWidget(self._local_hint)
-        # speech-model choice drives what "download models" fetches
+        # speech-model + device choices drive what/which pack "download" fetches
         self._local_form = QFormLayout()
         self.local_model_combo = QComboBox()
         for size in LOCAL_MODELS:
@@ -82,15 +82,17 @@ class _CredentialsPage(QWizardPage):
         _select_by_data(self.local_model_combo, wizard._base_config.local_model)
         self._local_model_label = QLabel(t("wizard.local.model_label"))
         self._local_form.addRow(self._local_model_label, self.local_model_combo)
+        self.local_device_combo = QComboBox()
+        for code in LOCAL_DEVICES:
+            self.local_device_combo.addItem(t(f"settings.device.{code}"), code)
+        _select_by_data(self.local_device_combo, wizard._base_config.local_device)
+        self._local_device_label = QLabel(t("settings.label.local_device"))
+        self._local_form.addRow(self._local_device_label, self.local_device_combo)
         layout.addLayout(self._local_form)
         self.runtime_status_label = QLabel()
         self.runtime_status_label.setWordWrap(True)
         layout.addWidget(self.runtime_status_label)
-        size_mb = local_runtime.PACK_SIZE_BYTES // 1_000_000
-        size_text = f"{size_mb} MB" if size_mb else "1 GB"
-        self.btn_download_runtime = QPushButton(
-            t("settings.btn_download_runtime", size=size_text)
-        )
+        self.btn_download_runtime = QPushButton()  # label set in _sync_runtime_button_label
         self.btn_download_runtime.setObjectName("btn_download_runtime")
         layout.addWidget(self.btn_download_runtime)
         self.btn_download_models = QPushButton(t("settings.btn_download_models"))
@@ -108,6 +110,9 @@ class _CredentialsPage(QWizardPage):
         # a different speech model (or languages, from step 1) means a
         # different download: keep the status hint truthful
         self.local_model_combo.currentIndexChanged.connect(self._refresh_models_state)
+        # CPU<->GPU switches to a different pack (and its size)
+        self.local_device_combo.currentIndexChanged.connect(self._on_device_changed)
+        self._sync_runtime_button_label()
 
     def initializePage(self) -> None:  # noqa: N802 (Qt name)
         while self._form.rowCount():
@@ -118,6 +123,8 @@ class _CredentialsPage(QWizardPage):
         self._local_hint.setVisible(is_local)
         self._local_model_label.setVisible(is_local)
         self.local_model_combo.setVisible(is_local)
+        self._local_device_label.setVisible(is_local)
+        self.local_device_combo.setVisible(is_local)
         self.runtime_status_label.setVisible(is_local)
         self.btn_download_models.setVisible(is_local)
         self.runtime_progress.setVisible(False)
@@ -140,11 +147,30 @@ class _CredentialsPage(QWizardPage):
 
     # ---------------------------------------------------------- local runtime
 
-    @staticmethod
-    def _local_components_available() -> bool:
-        """True when the heavy local packages are importable (runtime pack
-        active, or a dev environment with them installed)."""
-        return importlib.util.find_spec("faster_whisper") is not None
+    def _selected_device(self) -> str:
+        return self.local_device_combo.currentData()
+
+    def _local_components_available(self) -> bool:
+        """True when the components for the SELECTED device are usable (see the
+        Settings dialog for the same device-aware logic)."""
+        device = self._selected_device()
+        if local_runtime.is_installed(device=device):
+            return True
+        no_pack = not local_runtime.is_installed(device="cpu") and not local_runtime.is_installed(
+            device="cuda"
+        )
+        if no_pack:
+            return importlib.util.find_spec("faster_whisper") is not None
+        return False
+
+    def _sync_runtime_button_label(self) -> None:
+        size_bytes = local_runtime.pack_for(self._selected_device()).size_bytes
+        size_text = f"{size_bytes // 1_000_000} MB" if size_bytes else "1 GB"
+        self.btn_download_runtime.setText(t("settings.btn_download_runtime", size=size_text))
+
+    def _on_device_changed(self) -> None:
+        self._sync_runtime_button_label()
+        self._refresh_runtime_state()
 
     def _refresh_runtime_state(self) -> None:
         available = self._local_components_available()
@@ -186,11 +212,13 @@ class _CredentialsPage(QWizardPage):
         self.btn_download_models.setEnabled(False)
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # busy until the size is known
+        device = self._selected_device()
 
         def worker() -> None:
             try:
                 local_runtime.download_and_install(
-                    progress=lambda done, total: self._runtime_progress.emit(done, total)
+                    device=device,
+                    progress=lambda done, total: self._runtime_progress.emit(done, total),
                 )
             except local_runtime.LocalRuntimeError as exc:
                 self._worker_done.emit(False, str(exc))
@@ -447,6 +475,7 @@ class FirstRunWizard(QWizard):
         config.source_language = self.source_combo.currentData()
         config.target_language = self.target_combo.currentData()
         config.local_model = self._credentials_page.local_model_combo.currentData()
+        config.local_device = self._credentials_page.local_device_combo.currentData()
         config.audio.device_id = self.device_combo.currentData()
         config.vmix.host = self.host_edit.text().strip()
         config.vmix.port = self.port_spin.value()

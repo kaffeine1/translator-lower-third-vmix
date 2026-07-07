@@ -265,8 +265,21 @@ class _WhisperEngine:
             self._model = self._model_cls(self._model_name, device=self._device)
         except Exception:
             if not self._closed:
-                logger.warning("Caricamento modello Faster-Whisper fallito")
-                self._on_error(t("local.whisper_model_load_failed"))
+                # full traceback: "missing cublas64_12.dll" is undiagnosable
+                # otherwise. On CUDA the cause is almost always GPU
+                # components/drivers, so the message is actionable.
+                logger.warning(
+                    "Caricamento modello Faster-Whisper fallito (device=%s, model=%s)",
+                    self._device,
+                    self._model_name,
+                    exc_info=True,
+                )
+                key = (
+                    "local.whisper_gpu_load_failed"
+                    if self._device == "cuda"
+                    else "local.whisper_model_load_failed"
+                )
+                self._on_error(t(key))
             return
         while not self._closed:
             segment = self._take_segment()

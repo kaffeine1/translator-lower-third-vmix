@@ -9,6 +9,14 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Aggiunto
 
+- **Provider locali su GPU NVIDIA**: scegliendo **Dispositivo = «GPU (CUDA)»** il
+  pulsante scarica un **pacchetto componenti GPU** separato (~1,2 GB) che include
+  le librerie CUDA (cuBLAS, cuDNN, runtime) — così Faster-Whisper gira su GPU
+  senza installare CUDA a parte. Il pacchetto CPU e quello GPU convivono (cambio
+  dispositivo senza riscaricare). Il selettore dispositivo è ora anche nel
+  wizard. Se i componenti/driver GPU mancano, la traduzione mostra un messaggio
+  chiaro con l'invito a scaricare il pacchetto GPU, aggiornare i driver o usare
+  la CPU (prima falliva in silenzio).
 - **Gestione dello spazio dei modelli locali**: durante il download dei modelli
   lo stato mostra i **MB scaricati in tempo reale** (un modello grande come
   `large-v3`, ~3 GB, prima sembrava bloccato dietro una barra senza progresso);

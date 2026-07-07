@@ -611,3 +611,56 @@ def test_transcribe_passes_live_tuned_options():
     assert captured["condition_on_previous_text"] is False
     assert captured["beam_size"] == 1
     assert captured["temperature"] == 0.0
+
+
+# ------------------------------------------------------------------ GPU load error
+
+
+def test_whisper_gpu_load_failure_is_actionable(caplog):
+    # a failed model load on CUDA must yield the GPU-specific, actionable
+    # message (and log a full traceback for diagnosis)
+    import logging
+
+    from app.i18n import t
+    from app.providers.local_whisper import _WhisperEngine
+
+    def boom_model(name, device):
+        raise RuntimeError("Library cublas64_12.dll is not found")
+
+    errors: list[str] = []
+    engine = _WhisperEngine(
+        boom_model,
+        model="large-v3",
+        device="cuda",
+        sample_rate=16000,
+        language="it",
+        on_partial=lambda _t: None,
+        on_final=lambda _t: None,
+        on_error=errors.append,
+    )
+    with caplog.at_level(logging.WARNING):
+        engine._run()  # synchronous: model load fails immediately
+    assert errors == [t("local.whisper_gpu_load_failed")]
+    assert any(r.exc_info for r in caplog.records)  # traceback captured
+
+
+def test_whisper_cpu_load_failure_uses_generic_message():
+    from app.i18n import t
+    from app.providers.local_whisper import _WhisperEngine
+
+    def boom_model(name, device):
+        raise RuntimeError("boom")
+
+    errors: list[str] = []
+    engine = _WhisperEngine(
+        boom_model,
+        model="small",
+        device="cpu",
+        sample_rate=16000,
+        language="it",
+        on_partial=lambda _t: None,
+        on_final=lambda _t: None,
+        on_error=errors.append,
+    )
+    engine._run()
+    assert errors == [t("local.whisper_model_load_failed")]

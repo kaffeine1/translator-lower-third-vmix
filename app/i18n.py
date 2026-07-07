@@ -227,6 +227,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "google.connection_lost": "Connessione persa con Google Speech",
         "local.whisper_not_installed": "Faster-Whisper non installato. Installa 'faster-whisper' per usare il riconoscimento vocale locale.",
         "local.whisper_model_load_failed": "Impossibile caricare il modello vocale locale (Faster-Whisper).",
+        "local.whisper_gpu_load_failed": "Impossibile avviare la GPU: componenti GPU o driver NVIDIA mancanti o incompatibili. In Impostazioni scarica il pacchetto GPU (Dispositivo «GPU (CUDA)»), aggiorna i driver NVIDIA, oppure imposta il dispositivo su «CPU».",
         "local.whisper_failed": "Riconoscimento vocale locale non riuscito",
         "local.translate_not_connected": "Traduttore locale non connesso",
         "local.translate_failed": "Traduzione locale non riuscita",

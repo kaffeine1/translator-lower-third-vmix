@@ -320,6 +320,13 @@ Dettagli sulle credenziali:
 > conferma e riepilogo dello spazio liberato). Potrai riscaricarli in qualsiasi
 > momento; non farlo mentre una traduzione locale è in corso.
 >
+> 🎮 **GPU NVIDIA**: se imposti **Dispositivo = «GPU (CUDA)»**, il pulsante
+> scarica un **pacchetto componenti diverso e più grande** (~1,2 GB), che
+> include le librerie CUDA necessarie — così non devi installare CUDA a parte.
+> Serve una GPU NVIDIA con driver aggiornati. Il pacchetto CPU e quello GPU
+> convivono: puoi passare dall'uno all'altro senza riscaricare. Se scegli GPU
+> ma i componenti/driver mancano, la traduzione lo segnala e puoi tornare a CPU.
+>
 > In alternativa (per sviluppatori): esegui l'app dal codice sorgente con i
 > pacchetti di `requirements-optional.txt` installati — doppio clic su
 > `Avvia-Traduttore-Live.cmd` nella cartella del progetto.

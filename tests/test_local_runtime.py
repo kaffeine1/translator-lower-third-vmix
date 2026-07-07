@@ -275,3 +275,66 @@ def test_downloaded_models_empty_without_cache(tmp_path, monkeypatch):
 
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "inesistente"))
     assert downloaded_models() == []
+
+
+# ------------------------------------------------------------------ device-aware packs
+
+
+def test_pack_for_selects_by_device():
+    from app.local_runtime import PACKS, pack_for
+
+    assert pack_for("cuda").device == "cuda"
+    assert pack_for("CUDA").device == "cuda"  # case-insensitive
+    for value in ("cpu", "tpu", "", None):
+        assert pack_for(value).device == "cpu"
+    # every pack's url embeds its version (a bump can't desync them)
+    for pack in PACKS.values():
+        assert pack.version in pack.url
+
+
+def test_runtime_dir_differs_per_device(monkeypatch, tmp_path):
+    from app.local_runtime import runtime_dir
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert runtime_dir("cpu") != runtime_dir("cuda")
+    assert runtime_dir("cpu").name == "py314-cpu-1"
+    assert runtime_dir("cuda").name == "py314-cu124-1"
+
+
+def test_install_cuda_marks_with_cuda_version(tmp_path):
+    payload = _zip_bytes({"faster_whisper/__init__.py": "\n"})
+    target = tmp_path / "gpu"
+    download_and_install(
+        device="cuda", sha256="", directory=target, opener=_opener_for(payload)
+    )
+    assert (target / ".complete").read_text() == "py314-cu124-1"
+    sys.path.remove(str(target))
+
+
+def test_activate_cuda_registers_nvidia_dll_dirs(tmp_path):
+    from app.local_runtime import activate
+
+    target = tmp_path / "gpu"
+    for sub in ("cublas", "cudnn", "cuda_runtime"):
+        (target / "nvidia" / sub / "bin").mkdir(parents=True)
+    (target / ".complete").write_text("py314-cu124-1", encoding="utf-8")
+
+    registered: list[str] = []
+    ok = activate(target, device="cuda", dll_registrar=registered.append)
+    assert ok is True
+    assert len(registered) == 3  # one per nvidia/*/bin
+    assert all("bin" in p for p in registered)
+    sys.path.remove(str(target))
+
+
+def test_activate_cpu_does_not_register_dll_dirs(tmp_path):
+    from app.local_runtime import activate
+
+    target = tmp_path / "cpu"
+    target.mkdir()
+    (target / ".complete").write_text("py314-cpu-1", encoding="utf-8")
+    registered: list[str] = []
+    ok = activate(target, device="cpu", dll_registrar=registered.append)
+    assert ok is True
+    assert registered == []  # CPU pack: no CUDA dirs
+    sys.path.remove(str(target))

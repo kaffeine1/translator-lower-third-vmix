@@ -94,20 +94,23 @@ def main() -> int:
     logger = logging.getLogger("app.main")
     logger.info("%s v%s avviato", APP_DISPLAY_NAME, __version__)
 
-    # local-provider runtime pack (downloaded from Settings): if present, put
-    # it on sys.path so the optional heavy imports work in the frozen app too
-    try:
-        from app.local_runtime import activate as activate_local_runtime
-
-        activate_local_runtime()
-    except Exception:
-        logger.exception("Attivazione runtime locale fallita")
-
     manager = ConfigManager()
     first_run = not manager.config_path.exists()
     config = manager.load()
     # activate the interface language before building any UI
     set_locale(config.ui_language)
+
+    # local-provider runtime pack (downloaded from Settings): if present, put it
+    # on sys.path (and register the CUDA DLL dirs for the GPU pack) so the
+    # optional heavy imports work in the frozen app too. Use the configured
+    # device, falling back to the CPU pack if only that one is installed.
+    try:
+        from app.local_runtime import activate as activate_local_runtime
+
+        if not activate_local_runtime(device=config.local_device):
+            activate_local_runtime(device="cpu")
+    except Exception:
+        logger.exception("Attivazione runtime locale fallita")
 
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
