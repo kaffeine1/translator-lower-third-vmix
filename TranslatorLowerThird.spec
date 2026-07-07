@@ -99,6 +99,42 @@ hiddenimports += [
 ]
 
 
+# The heavy local-provider packages ship via the downloadable runtime pack
+# (see app/local_runtime.py), NOT inside the app bundle. They are installed in
+# the dev venv for testing, and PyInstaller would otherwise follow the lazy
+# function-level imports and balloon the build by gigabytes. Excluded modules
+# still import fine at runtime from the activated pack on sys.path.
+_local_runtime_excludes = [
+    "torch",
+    "torchgen",
+    "functorch",
+    "transformers",
+    "faster_whisper",
+    "ctranslate2",
+    "sentencepiece",
+    "onnxruntime",
+    "av",
+    "huggingface_hub",
+    "hf_xet",
+    "tokenizers",
+    "safetensors",
+    "sympy",
+    "mpmath",
+    "networkx",
+    "jinja2",
+    "fsspec",
+    "filelock",
+    "regex",
+    "tqdm",
+    "rich",
+    "typer",
+    "click",
+    "shellingham",
+    "markdown_it",
+    "mdurl",
+    "flatbuffers",
+]
+
 a = Analysis(
     [os.path.join("app", "main.py")],
     pathex=[ROOT],
@@ -107,7 +143,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "pytest", "ruff"],
+    excludes=["tkinter", "pytest", "ruff"] + _local_runtime_excludes,
     noarchive=False,
 )
 

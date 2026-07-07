@@ -2,7 +2,7 @@
 # Author: Michele Dipace <michele.dipace@kaffeine.net>
 """Traduttore Live."""
 
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 __author__ = "Michele Dipace"
 __author_email__ = "michele.dipace@kaffeine.net"
 # APP_NAME is the internal identifier (config/log folders, exe, credential
