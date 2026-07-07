@@ -1,6 +1,6 @@
 # Traduttore Live
 
-> Live speech translation to a vMix lower-third — a Windows desktop app for live-production operators.
+> Live speech translation to a vMix lower-third and to on-screen subtitles — a Windows desktop app for live-production operators.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
@@ -8,13 +8,17 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **Traduttore Live** captures live speech audio, translates it in near real time and
-writes the translated text into a **vMix** lower-third/title field over the local
-HTTP API. It is built for non-technical live-production operators: install,
-configure once, press **START**. No terminal, no JSON editing, no Python install
-required on the operator's PC.
+shows the translated text where the audience needs it: in a **vMix**
+lower-third/title field (over the local HTTP API), as **on-screen subtitles** on a
+chosen monitor or projector (always-on-top, click-through caption — no vMix
+required), or both at once. It is built for non-technical live-production
+operators: install, configure once, press **START**. No terminal, no JSON editing,
+no Python install required on the operator's PC.
 
 ```text
-Spanish live audio  →  Italian subtitle  →  vMix lower third
+                                    ┌→  vMix lower third (SetText)
+Spanish live audio  →  Italian subtitle
+                                    └→  on-screen subtitles (chosen monitor)
 ```
 
 > The application UI and the operator messages are in **Italian**. A detailed
@@ -34,7 +38,10 @@ Spanish live audio  →  Italian subtitle  →  vMix lower third
   (e.g. a streamed video), no virtual audio cable needed.
 - **On-screen subtitle overlay**: a frameless, always-on-top, click-through
   caption on a chosen monitor — for a second screen or projector, alongside or
-  instead of the vMix title. Survives display-layout changes.
+  instead of the vMix title. Configurable monitor, font size and background
+  opacity; quick on/off toggle in the main window. Survives display-layout
+  changes and stays above the vMix fullscreen output. (It paints on the physical
+  monitor only — to burn subtitles into the produced video, use the vMix title.)
 - **Secure API keys** stored in the Windows Credential Manager — never in files,
   never in logs.
 - **Anti-flicker subtitles**: the first words of each caption appear immediately,
@@ -126,15 +133,17 @@ LGPL/commercial Qt licensing model; the application code itself remains MIT.
 ## Architecture
 
 ```text
-Windows audio input
+Windows audio input           (microphone / line-in / system-output loopback)
         ↓
 RealtimeTranslationProvider   (or SpeechProvider + TranslationProvider)
         ↓
-SubtitleFormatter             (anti-flicker, max 2 lines, clear-after-silence)
+SubtitleFormatter             (anti-flicker, max lines, clear-after-silence)
         ↓
-VmixOutput                    (HTTP SetText)
-        ↓
-vMix title / lower third
+   ┌────┴────────────┐
+VmixOutput        SubtitleOverlay
+(HTTP SetText)    (on-screen caption)
+   ↓                  ↓
+vMix title        chosen monitor
 ```
 
 The GUI drives the pipeline but contains no provider/audio/vMix business logic.
