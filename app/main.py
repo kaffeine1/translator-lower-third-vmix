@@ -94,6 +94,15 @@ def main() -> int:
     logger = logging.getLogger("app.main")
     logger.info("%s v%s avviato", APP_DISPLAY_NAME, __version__)
 
+    # local-provider runtime pack (downloaded from Settings): if present, put
+    # it on sys.path so the optional heavy imports work in the frozen app too
+    try:
+        from app.local_runtime import activate as activate_local_runtime
+
+        activate_local_runtime()
+    except Exception:
+        logger.exception("Attivazione runtime locale fallita")
+
     manager = ConfigManager()
     first_run = not manager.config_path.exists()
     config = manager.load()

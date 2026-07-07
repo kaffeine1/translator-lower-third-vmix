@@ -305,13 +305,18 @@ Dettagli sulle credenziali:
 > in modo chiaro che mancano. Per un primo collaudo conviene partire da un
 > provider cloud o dalla modalità Demo.
 >
-> ⚠️ I componenti aggiuntivi **non possono essere aggiunti alla versione
-> installata**: i provider locali funzionano solo eseguendo l'app **dal codice
-> sorgente** (repository + ambiente Python con `requirements.txt` e
-> `requirements-optional.txt` installati). Per avviarla senza usare il
-> terminale, fai **doppio clic su `Avvia-Traduttore-Live.cmd`** nella cartella
-> del progetto. La prima esecuzione scarica i modelli da Internet; dopo,
-> funziona offline.
+> 📥 **Installazione dei componenti locali con un clic**: per non appesantire
+> l'installer, i componenti dei provider locali non sono inclusi. In
+> *Impostazioni → Provider locali (offline)* trovi **"Scarica e attiva i
+> componenti locali"**: un download una tantum (~235 MB, ~1,2 GB su disco) che
+> viene installato automaticamente nel profilo utente e attivato subito, senza
+> reinstallare l'app. Poi **"Scarica ora i modelli per le lingue configurate"**
+> pre-scarica i modelli, così il primo START è immediato. Serve Internet solo
+> per questi download; dopo, i provider locali funzionano **offline**.
+>
+> In alternativa (per sviluppatori): esegui l'app dal codice sorgente con i
+> pacchetti di `requirements-optional.txt` installati — doppio clic su
+> `Avvia-Traduttore-Live.cmd` nella cartella del progetto.
 
 > **Sottotitolazione senza traduzione**: con i provider composti (Locale,
 > Google/Azure → DeepL) puoi impostare **la stessa lingua** come sorgente e

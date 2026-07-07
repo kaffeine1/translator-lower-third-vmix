@@ -9,7 +9,11 @@ caller (MainWindow) that saves. This makes it testable without I/O.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+import importlib.util
+import logging
+import threading
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -21,12 +25,15 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QLineEdit,
+    QProgressBar,
+    QPushButton,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from app import local_runtime
 from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.gui.subtitle_overlay import available_monitors
@@ -61,7 +68,15 @@ def _select_by_data(combo: QComboBox, data: object) -> None:
     combo.setCurrentIndex(index if index >= 0 else 0)
 
 
+logger = logging.getLogger("app.gui")
+
+
 class SettingsDialog(QDialog):
+    # worker-thread -> GUI marshalling for the local-runtime downloads
+    _runtime_progress = Signal(int, int)  # done bytes, total bytes (0 = unknown)
+    _worker_status = Signal(str)
+    _worker_done = Signal(bool, str)  # ok, operator message
+
     def __init__(
         self,
         config: AppConfig,
@@ -161,6 +176,30 @@ class SettingsDialog(QDialog):
         note = QLabel(t("settings.local_hardware_note"))
         note.setWordWrap(True)
         local_form.addRow(note)
+        # download & setup of the heavy local components (runtime pack) and of
+        # the models: keeps the installer light while making local providers
+        # one click away for the operator
+        self.runtime_status_label = QLabel()
+        local_form.addRow(self.runtime_status_label)
+        size_mb = local_runtime.PACK_SIZE_BYTES // 1_000_000
+        size_text = f"{size_mb} MB" if size_mb else "1 GB"
+        self.btn_download_runtime = QPushButton(
+            t("settings.btn_download_runtime", size=size_text)
+        )
+        self.btn_download_runtime.setObjectName("btn_download_runtime")
+        local_form.addRow(self.btn_download_runtime)
+        self.btn_download_models = QPushButton(t("settings.btn_download_models"))
+        self.btn_download_models.setObjectName("btn_download_models")
+        local_form.addRow(self.btn_download_models)
+        self.runtime_progress = QProgressBar()
+        self.runtime_progress.setVisible(False)
+        local_form.addRow(self.runtime_progress)
+        self.btn_download_runtime.clicked.connect(self._on_download_runtime)
+        self.btn_download_models.clicked.connect(self._on_download_models)
+        self._runtime_progress.connect(self._on_runtime_progress)
+        self._worker_status.connect(self.runtime_status_label.setText)
+        self._worker_done.connect(self._on_worker_done)
+        self._refresh_runtime_state()
         layout.addWidget(local_box)
 
         subtitles_box = QGroupBox(t("settings.group.subtitles"))
@@ -334,3 +373,89 @@ class SettingsDialog(QDialog):
             for account, edit in self._cred_edits.items()
             if edit.text().strip()
         }
+
+    # ------------------------------------------------------------ local runtime
+
+    @staticmethod
+    def _local_components_available() -> bool:
+        """True when the heavy local packages are importable (runtime pack
+        active, or a dev environment with them installed)."""
+        return importlib.util.find_spec("faster_whisper") is not None
+
+    def _refresh_runtime_state(self) -> None:
+        available = self._local_components_available()
+        self.runtime_status_label.setText(
+            t("settings.runtime_status_present")
+            if available
+            else t("settings.runtime_status_absent")
+        )
+        self.btn_download_runtime.setVisible(not available)
+        self.btn_download_models.setEnabled(available)
+
+    def _on_download_runtime(self) -> None:
+        self.btn_download_runtime.setEnabled(False)
+        self.btn_download_models.setEnabled(False)
+        self.runtime_progress.setVisible(True)
+        self.runtime_progress.setRange(0, 0)  # busy until the size is known
+
+        def worker() -> None:
+            try:
+                local_runtime.download_and_install(
+                    progress=lambda done, total: self._runtime_progress.emit(done, total)
+                )
+            except local_runtime.LocalRuntimeError as exc:
+                self._worker_done.emit(False, str(exc))
+                return
+            except Exception:
+                logger.exception("Installazione runtime locale fallita")
+                self._worker_done.emit(False, t("runtime.download_failed"))
+                return
+            self._worker_done.emit(True, t("settings.runtime_ready"))
+
+        threading.Thread(target=worker, daemon=True, name="runtime-download").start()
+
+    def _on_download_models(self) -> None:
+        self.btn_download_runtime.setEnabled(False)
+        self.btn_download_models.setEnabled(False)
+        self.runtime_progress.setVisible(True)
+        self.runtime_progress.setRange(0, 0)  # model downloads: busy indicator
+        local_model = self.local_model_combo.currentData()
+        source = self.source_combo.currentData()
+        target = self.target_combo.currentData()
+
+        def worker() -> None:
+            try:
+                local_runtime.download_models(
+                    local_model, source, target, status=self._worker_status.emit
+                )
+            except local_runtime.LocalRuntimeError as exc:
+                self._worker_done.emit(False, str(exc))
+                return
+            except Exception:
+                logger.exception("Download modelli locali fallito")
+                self._worker_done.emit(False, t("runtime.download_failed"))
+                return
+            self._worker_done.emit(True, t("settings.models_ready"))
+
+        threading.Thread(target=worker, daemon=True, name="models-download").start()
+
+    def _on_runtime_progress(self, done: int, total: int) -> None:
+        if total > 0:
+            self.runtime_progress.setRange(0, max(1, total // 1_000_000))
+            self.runtime_progress.setValue(done // 1_000_000)
+            self.runtime_status_label.setText(
+                t(
+                    "settings.runtime_downloading",
+                    done=done // 1_000_000,
+                    total=total // 1_000_000,
+                )
+            )
+        if total and done >= total:
+            self._worker_status.emit(t("settings.runtime_extracting"))
+
+    def _on_worker_done(self, ok: bool, message: str) -> None:
+        self.runtime_progress.setVisible(False)
+        self.btn_download_runtime.setEnabled(True)
+        self.btn_download_models.setEnabled(True)
+        self._refresh_runtime_state()
+        self.runtime_status_label.setText(message)

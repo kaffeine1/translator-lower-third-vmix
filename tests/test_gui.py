@@ -782,3 +782,28 @@ def test_overlay_set_text_does_not_move_or_resize(qapp):
     qapp.processEvents()
     assert overlay.geometry() == before
     overlay.close()
+
+
+def test_settings_dialog_has_local_runtime_controls(qapp):
+    # download & setup of local components from the GUI (installer stays light)
+    dialog = SettingsDialog(AppConfig(), [])
+    assert dialog.runtime_status_label.text() != ""
+    assert dialog.btn_download_models is not None
+    # in the dev environment the packages are importable -> download hidden,
+    # models button enabled; without them the inverse must hold
+    if dialog._local_components_available():
+        assert not dialog.btn_download_runtime.isVisibleTo(dialog)
+        assert dialog.btn_download_models.isEnabled()
+    else:
+        assert dialog.btn_download_runtime.isVisibleTo(dialog)
+        assert not dialog.btn_download_models.isEnabled()
+    assert not dialog.runtime_progress.isVisibleTo(dialog)  # hidden until used
+
+
+def test_settings_dialog_worker_done_restores_buttons(qapp):
+    dialog = SettingsDialog(AppConfig(), [])
+    dialog.runtime_progress.setVisible(True)
+    dialog.btn_download_models.setEnabled(False)
+    dialog._on_worker_done(True, "fatto")
+    assert not dialog.runtime_progress.isVisibleTo(dialog)
+    assert dialog.runtime_status_label.text() == "fatto"

@@ -7,6 +7,18 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Download e attivazione automatici dei componenti locali** dalle
+  Impostazioni: l'installer resta leggero, ma chi vuole provare i provider
+  locali (Faster-Whisper → MarianMT) ora ha un pulsante *"Scarica e attiva i
+  componenti locali"* che scarica il pacchetto runtime (~235 MB, con verifica
+  di integrità e barra di avanzamento), lo installa nel profilo utente e lo attiva
+  subito — senza reinstallare l'app e senza riavviarla. Un secondo pulsante
+  pre-scarica i **modelli** per le lingue configurate, così il primo START è
+  immediato. Funziona anche nella versione installata (prima i provider locali
+  richiedevano l'esecuzione dal sorgente).
+
 ### Migliorato
 
 - **Riconoscimento locale: molte meno parole perse.** Il motore Faster-Whisper
