@@ -308,8 +308,10 @@ Dettagli sulle credenziali:
 > ⚠️ I componenti aggiuntivi **non possono essere aggiunti alla versione
 > installata**: i provider locali funzionano solo eseguendo l'app **dal codice
 > sorgente** (repository + ambiente Python con `requirements.txt` e
-> `requirements-optional.txt` installati, poi `python -m app.main`). La prima
-> esecuzione scarica i modelli da Internet; dopo, funziona offline.
+> `requirements-optional.txt` installati). Per avviarla senza usare il
+> terminale, fai **doppio clic su `Avvia-Traduttore-Live.cmd`** nella cartella
+> del progetto. La prima esecuzione scarica i modelli da Internet; dopo,
+> funziona offline.
 
 > **Sottotitolazione senza traduzione**: con i provider composti (Locale,
 > Google/Azure → DeepL) puoi impostare **la stessa lingua** come sorgente e
