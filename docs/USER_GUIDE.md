@@ -304,6 +304,17 @@ Dettagli sulle credenziali:
 > fluidi, una GPU. Finché non sono installati, la verifica del provider segnala
 > in modo chiaro che mancano. Per un primo collaudo conviene partire da un
 > provider cloud o dalla modalità Demo.
+>
+> ⚠️ I componenti aggiuntivi **non possono essere aggiunti alla versione
+> installata**: i provider locali funzionano solo eseguendo l'app **dal codice
+> sorgente** (repository + ambiente Python con `requirements.txt` e
+> `requirements-optional.txt` installati, poi `python -m app.main`). La prima
+> esecuzione scarica i modelli da Internet; dopo, funziona offline.
+
+> **Sottotitolazione senza traduzione**: con i provider composti (Locale,
+> Google/Azure → DeepL) puoi impostare **la stessa lingua** come sorgente e
+> destinazione: il parlato riconosciuto va in onda così com'è, senza passare dal
+> traduttore (es. parlato italiano → sottotitoli italiani).
 
 Se scegli un provider ma mancano le credenziali necessarie, l'app **ripiega
 automaticamente sulla modalità Demo** e te lo segnala, così puoi comunque

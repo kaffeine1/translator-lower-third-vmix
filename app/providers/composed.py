@@ -47,6 +47,10 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         # translates faster) and captions swap on air. asyncio.Lock wakes
         # waiters FIFO, so serializing here preserves the arrival order.
         self._final_lock = asyncio.Lock()
+        # same source/target language = captioning without translation: the
+        # recognized text goes on air as-is (e.g. Italian speech -> Italian
+        # subtitles). Decided in connect() from the configured languages.
+        self._passthrough = False
         speech.on_partial_text(self._on_source_partial)
         speech.on_final_text(self._on_source_final)
         speech.on_error(self._emit_error)
@@ -57,7 +61,11 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         # capture the loop here so translations can be scheduled on it in a
         # thread-safe way from any thread
         self._loop = asyncio.get_running_loop()
-        await self._translator.connect(config)
+        source = (config.source_language or "").strip().lower()
+        target = (config.target_language or "").strip().lower()
+        self._passthrough = bool(source) and source == target
+        if not self._passthrough:  # captioning-only needs no translator
+            await self._translator.connect(config)
         await self._speech.connect(config)
 
     async def send_audio(self, chunk: bytes) -> None:
@@ -66,7 +74,8 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
     async def close(self) -> None:
         self._closed = True
         await self._speech.close()
-        await self._translator.close()
+        if not self._passthrough:  # never connected in captioning-only mode
+            await self._translator.close()
 
     # -- callbacks from the SpeechProvider (may arrive from an SDK thread) -----
 
@@ -90,11 +99,19 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
                 coro.close()
 
     def _on_source_partial(self, text: str) -> None:
+        if self._passthrough:
+            if not self._closed and text:
+                self._emit_partial(text)  # emitters are thread-safe downstream
+            return
         self._seq += 1
         seq = self._seq
         self._schedule(self._translate_partial(text, seq))
 
     def _on_source_final(self, text: str) -> None:
+        if self._passthrough:
+            if not self._closed and text:
+                self._emit_final(text)
+            return
         # a final invalidates pending partials but its translation must
         # always be emitted
         self._seq += 1

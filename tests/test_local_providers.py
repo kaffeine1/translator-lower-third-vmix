@@ -388,3 +388,83 @@ def test_marian_concurrent_first_translations_build_model_once():
         assert len(builds) == 1  # a single model build despite the concurrency
 
     asyncio.run(run())
+
+
+# ---------------------------------------------------------------- same-language passthrough
+
+
+def test_composed_same_language_skips_translator_and_passes_text_through():
+    # source == target = captioning without translation (e.g. it -> it): the
+    # recognized text must go on air as-is and the translator must never run
+    from app.providers.composed import ComposedRealtimeProvider
+
+    class ExplodingTranslator:
+        connected = False
+
+        async def connect(self, config) -> None:
+            self.connected = True
+
+        async def close(self) -> None: ...
+
+        async def translate(self, text: str) -> str:
+            raise AssertionError("translator must not run in passthrough mode")
+
+    async def run():
+        engines: list[FakeWhisperEngine] = []
+
+        def factory(**opts):
+            engine = FakeWhisperEngine(**opts)
+            engines.append(engine)
+            return engine
+
+        translator = ExplodingTranslator()
+        speech = FasterWhisperSpeechProvider(engine_factory=factory)
+        provider = ComposedRealtimeProvider(speech, translator)
+        partials: list[str] = []
+        finals: list[str] = []
+        provider.on_partial_text(partials.append)
+        provider.on_final_text(finals.append)
+        await provider.connect(
+            ProviderConfig(source_language="it", target_language="IT")  # case-insensitive
+        )
+        engines[0].opts["on_partial"]("buona")
+        engines[0].emit_final("buonasera a tutti")
+        await asyncio.sleep(0)  # nothing scheduled, but keep the loop honest
+        await provider.close()
+        assert translator.connected is False  # translator never even connected
+        return partials, finals
+
+    partials, finals = asyncio.run(run())
+    assert partials == ["buona"]
+    assert finals == ["buonasera a tutti"]
+
+
+def test_composed_different_languages_still_translate():
+    from app.providers.composed import ComposedRealtimeProvider
+
+    class UpperTranslator:
+        async def connect(self, config) -> None: ...
+        async def close(self) -> None: ...
+
+        async def translate(self, text: str) -> str:
+            return text.upper()
+
+    async def run():
+        engines: list[FakeWhisperEngine] = []
+
+        def factory(**opts):
+            engine = FakeWhisperEngine(**opts)
+            engines.append(engine)
+            return engine
+
+        speech = FasterWhisperSpeechProvider(engine_factory=factory)
+        provider = ComposedRealtimeProvider(speech, UpperTranslator())
+        finals: list[str] = []
+        provider.on_final_text(finals.append)
+        await provider.connect(ProviderConfig(source_language="it", target_language="en"))
+        engines[0].emit_final("buonasera")
+        await asyncio.sleep(0.1)
+        await provider.close()
+        return finals
+
+    assert asyncio.run(run()) == ["BUONASERA"]

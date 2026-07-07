@@ -7,6 +7,17 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+
+- **Sottotitolazione senza traduzione** (provider composti): impostando la
+  **stessa lingua** come sorgente e destinazione, il testo riconosciuto va in
+  onda così com'è senza passare dal traduttore (es. parlato italiano →
+  sottotitoli italiani con il provider Locale). Prima questo caso falliva
+  (il modello di traduzione `it-it` non esiste).
+- **Manuale**: chiarito che i provider locali funzionano solo eseguendo l'app
+  dal sorgente (i componenti aggiuntivi non possono essere aggiunti alla
+  versione installata).
+
 ### Corretto
 
 - **Provider locale (Faster-Whisper → MarianMT) di nuovo funzionante e
