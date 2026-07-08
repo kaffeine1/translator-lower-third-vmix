@@ -27,22 +27,56 @@ class CredentialField:
 
     ``label_key`` is an i18n key for the field label; ``secret`` marks a
     password field (hidden) vs a plain value like a file path or a region.
+    ``help_key`` is an optional i18n key for a one-line "how to obtain this"
+    hint, and ``help_url`` an optional link to the provider console page — the
+    GUI shows them under the field so a non-technical operator knows where to get
+    the key.
     """
 
     account: str
     label_key: str
     secret: bool = True
+    help_key: str = ""
+    help_url: str = ""
 
 
 # Reusable credential descriptors (one per secure-storage account).
-_CRED_OPENAI = CredentialField("openai", "cred.openai_key")
-_CRED_DEEPL = CredentialField("deepl", "cred.deepl_key")
-_CRED_GOOGLE = CredentialField("google", "cred.google_credentials", secret=False)
+_CRED_OPENAI = CredentialField(
+    "openai",
+    "cred.openai_key",
+    help_key="cred_help.openai",
+    help_url="https://platform.openai.com/api-keys",
+)
+_CRED_DEEPL = CredentialField(
+    "deepl",
+    "cred.deepl_key",
+    help_key="cred_help.deepl",
+    help_url="https://www.deepl.com/pro-api",
+)
+_CRED_GOOGLE = CredentialField(
+    "google",
+    "cred.google_credentials",
+    secret=False,
+    help_key="cred_help.google",
+    help_url="https://console.cloud.google.com/iam-admin/serviceaccounts/create",
+)
 # Google Cloud Translation (v2 REST) uses an API key, distinct from the service
 # account JSON that Google Speech uses.
-_CRED_GOOGLE_TRANSLATE = CredentialField("google-translate", "cred.google_translate_key")
-_CRED_AZURE = CredentialField("azure", "cred.azure_key")
-_CRED_AZURE_REGION = CredentialField("azure-region", "cred.azure_region", secret=False)
+_CRED_GOOGLE_TRANSLATE = CredentialField(
+    "google-translate",
+    "cred.google_translate_key",
+    help_key="cred_help.google_translate",
+    help_url="https://console.cloud.google.com/apis/credentials",
+)
+_CRED_AZURE = CredentialField(
+    "azure",
+    "cred.azure_key",
+    help_key="cred_help.azure",
+    help_url="https://portal.azure.com/#create/Microsoft.CognitiveServicesAllInOne",
+)
+_CRED_AZURE_REGION = CredentialField(
+    "azure-region", "cred.azure_region", secret=False, help_key="cred_help.azure_region"
+)
 
 
 @dataclass(frozen=True)

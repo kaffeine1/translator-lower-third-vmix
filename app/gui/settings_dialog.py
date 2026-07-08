@@ -38,6 +38,7 @@ from app import local_runtime
 from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.gui.subtitle_overlay import available_monitors
+from app.gui.widgets import credential_help_label
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 
@@ -344,6 +345,10 @@ class SettingsDialog(QDialog):
             )
             self._cred_form.addRow(t(cred.label_key), edit)
             self._cred_edits[cred.account] = edit
+            # where/how to obtain this credential (instruction + console link)
+            help_label = credential_help_label(cred)
+            if help_label is not None:
+                self._cred_form.addRow("", help_label)
 
     def _load(self, config: AppConfig) -> None:
         _select_by_data(self.lang_combo, config.ui_language)

@@ -440,6 +440,41 @@ def test_settings_dialog_switching_provider_rebuilds_credentials(qapp):
     assert set(dialog._cred_edits) == {"google", "google-translate"}
 
 
+def test_credential_help_label(qapp):
+    from app.gui.widgets import credential_help_label
+    from app.providers.registry import (
+        _CRED_AZURE_REGION,
+        _CRED_OPENAI,
+        CredentialField,
+    )
+
+    lbl = credential_help_label(_CRED_OPENAI)
+    assert lbl is not None
+    assert "platform.openai.com" in lbl.text()
+    assert "<a href" in lbl.text().lower()
+    assert lbl.openExternalLinks() is True  # click opens the browser, no wiring
+    # a credential with an instruction but no link: shown, but no anchor
+    reg = credential_help_label(_CRED_AZURE_REGION)
+    assert reg is not None
+    assert "<a href" not in reg.text().lower()
+    # a credential with no help at all: nothing to show
+    assert credential_help_label(CredentialField("x", "cred.openai_key")) is None
+
+
+def test_settings_credentials_show_help_link(qapp):
+    from PySide6.QtWidgets import QLabel
+
+    config = AppConfig()
+    config.provider = "google-google"
+    dialog = SettingsDialog(config, [])
+    texts = " ".join(
+        h.text() for h in dialog.findChildren(QLabel, "cred_help")
+    )
+    # both Google credentials link to the Google Cloud console
+    assert "console.cloud.google.com" in texts
+    assert "<a href" in texts.lower()
+
+
 def test_settings_dialog_preserves_values_not_in_combo_lists(qapp):
     # regression: a disconnected device or a language off the list must not be
     # silently rewritten on save

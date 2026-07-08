@@ -12,6 +12,32 @@ from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout
 from app.i18n import t
 
 
+def credential_help_label(cred) -> QLabel | None:
+    """A small, muted help line to show under a credential field: a one-line
+    "how to obtain this" hint and a link that opens the provider's console page
+    in the browser. Returns None when the credential declares no help.
+
+    ``cred`` is a registry.CredentialField (duck-typed: needs help_key/help_url).
+    The link opens externally (QLabel.setOpenExternalLinks), so no wiring is
+    needed at the call site.
+    """
+    hint = t(cred.help_key) if getattr(cred, "help_key", "") else ""
+    url = getattr(cred, "help_url", "")
+    if url:
+        link = f'<a href="{url}">{t("cred.get_key_link")}</a>'
+        hint = f"{hint} {link}".strip()
+    if not hint:
+        return None
+    label = QLabel(hint)
+    label.setObjectName("cred_help")
+    label.setTextFormat(Qt.TextFormat.RichText)
+    label.setOpenExternalLinks(True)
+    label.setWordWrap(True)
+    # muted, theme-aware: reads as secondary help text
+    label.setStyleSheet("color: palette(mid);")
+    return label
+
+
 class StatusState(Enum):
     RED = "rosso"
     YELLOW = "giallo"

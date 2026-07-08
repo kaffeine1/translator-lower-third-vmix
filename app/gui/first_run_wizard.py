@@ -39,6 +39,7 @@ from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
 from app.gui.settings_dialog import LANGUAGES, SYSTEM_DEFAULT_DEVICE, _select_by_data
+from app.gui.widgets import credential_help_label
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 from app.services import AppServices
@@ -144,6 +145,10 @@ class _CredentialsPage(QWizardPage):
                 edit.setEchoMode(QLineEdit.EchoMode.Password)
             self._form.addRow(t(cred.label_key), edit)
             self._edits[cred.account] = edit
+            # where/how to obtain this credential (instruction + console link)
+            help_label = credential_help_label(cred)
+            if help_label is not None:
+                self._form.addRow("", help_label)
 
     # ---------------------------------------------------------- local runtime
 
