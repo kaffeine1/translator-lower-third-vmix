@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -245,6 +246,45 @@ StatusCallback = Callable[[str], None]
 # throttle for the MB-progress status updates during model downloads
 _MODEL_PROGRESS_EVERY_S = 0.5
 
+# how many times a single model download is retried before giving up: a large
+# model over a flaky link can drop several times, and each retry resumes.
+_MODEL_DOWNLOAD_ATTEMPTS = 4
+
+
+def _download_repo_with_retries(
+    fetch: Callable[[str], None], repo: str, status: StatusCallback | None = None
+) -> None:
+    """Call ``fetch(repo)``, retrying transient failures with backoff.
+
+    Between attempts it waits (2 s, 4 s, 8 s…) and re-runs the fetch; the
+    Hugging Face cache keeps the partial file, so a retry RESUMES the download
+    instead of starting over. Raises the last error if every attempt fails.
+    """
+    for attempt in range(1, _MODEL_DOWNLOAD_ATTEMPTS + 1):
+        try:
+            fetch(repo)
+            return
+        except Exception:
+            logger.warning(
+                "Download modello %s: tentativo %d/%d fallito",
+                repo,
+                attempt,
+                _MODEL_DOWNLOAD_ATTEMPTS,
+                exc_info=True,
+            )
+            if attempt >= _MODEL_DOWNLOAD_ATTEMPTS:
+                raise
+            if status is not None:
+                status(
+                    t(
+                        "runtime.model_retry",
+                        name=repo,
+                        attempt=attempt + 1,
+                        total=_MODEL_DOWNLOAD_ATTEMPTS,
+                    )
+                )
+            time.sleep(min(2**attempt, 15))
+
 
 # Only cache directories with these prefixes are OURS to manage/remove: the
 # HF cache may also hold models of other applications.
@@ -416,8 +456,17 @@ def download_models(
         except ImportError:
             raise LocalRuntimeError(t("runtime.not_installed")) from None
 
+        # large models (medium ~1.5 GB, large-v3 ~3 GB) over a slow/flaky link
+        # often drop mid-stream: give each request more slack than the 10 s
+        # default, and retry with resume (the HF cache keeps the partial file).
+        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
+
         def downloader(repo: str) -> None:
-            snapshot_download(repo, tqdm_class=_progress_tqdm(status, repo))
+            _download_repo_with_retries(
+                lambda r: snapshot_download(r, tqdm_class=_progress_tqdm(status, r)),
+                repo,
+                status,
+            )
 
     repos = required_model_repos(local_model, source_language, target_language)
     for repo in repos:

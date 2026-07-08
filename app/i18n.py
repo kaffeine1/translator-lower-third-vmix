@@ -118,6 +118,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "settings.remove_models_done": "Spazio liberato: {size}.",
         "settings.remove_models_partial": "Spazio liberato: {size}. Non rimossi (in uso?): {names}. Chiudi la traduzione e riprova.",
         "runtime.model_download_failed": "Download del modello {name} non riuscito. Controlla la connessione e riprova.",
+        "runtime.model_retry": "Download di {name} interrotto, riprovo ({attempt}/{total})…",
         "settings.group.subtitles": "Sottotitoli",
         "settings.label.max_chars": "Max caratteri per riga:",
         "settings.label.max_lines": "Max righe:",

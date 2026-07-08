@@ -5,6 +5,17 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.3.2] — 2026-07-08
+
+### Corretto
+
+- **Download dei modelli grandi più affidabile.** Scaricare i modelli più pesanti
+  (`medium` ~1,5 GB, `large-v3` ~3 GB) su connessioni lente o instabili spesso si
+  interrompeva, mentre i piccoli (`small`) riuscivano. Ora il download ha un
+  **timeout più ampio** e **riprova automaticamente** in caso di interruzione,
+  **riprendendo** dal punto in cui si era fermato invece di ricominciare (fino a
+  4 tentativi, con avviso «riprovo…»).
+
 ## [0.3.1] — 2026-07-08
 
 ### Aggiunto

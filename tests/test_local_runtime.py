@@ -203,6 +203,36 @@ def test_download_models_failure_is_readable():
         download_models("tiny", "it", "en", downloader=broken)
 
 
+def test_download_repo_retries_then_succeeds(monkeypatch):
+    import app.local_runtime as lr
+
+    monkeypatch.setattr(lr.time, "sleep", lambda _s: None)  # no real backoff wait
+    calls = {"n": 0}
+
+    def flaky(repo):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("connection reset")
+
+    lr._download_repo_with_retries(flaky, "Systran/faster-whisper-large-v3")
+    assert calls["n"] == 3  # failed twice, resumed, succeeded on the third
+
+
+def test_download_repo_retries_give_up_after_attempts(monkeypatch):
+    import app.local_runtime as lr
+
+    monkeypatch.setattr(lr.time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    def always_broken(repo):
+        calls["n"] += 1
+        raise RuntimeError("network down")
+
+    with pytest.raises(RuntimeError):
+        lr._download_repo_with_retries(always_broken, "repo")
+    assert calls["n"] == lr._MODEL_DOWNLOAD_ATTEMPTS
+
+
 def test_whisper_repo_naming():
     assert whisper_repo("large-v3") == "Systran/faster-whisper-large-v3"
 

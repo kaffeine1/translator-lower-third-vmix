@@ -1,6 +1,6 @@
 [project]
 name = "translator-lower-third-vmix"
-version = "0.3.1"
+version = "0.3.2"
 description = "Windows desktop app that translates live speech and sends subtitles to a vMix lower third via HTTP API"
 readme = "README.md"
 requires-python = ">=3.11"
