@@ -33,8 +33,15 @@ MIN_SEGMENT_SECONDS = 1.0  # Whisper hallucinates on sub-second clips
 MAX_SEGMENT_SECONDS = 6.0  # hard latency cap during unbroken speech
 SILENCE_WINDOW_SECONDS = 0.4  # inter-phrase pause length that triggers a cut
 FRAME_SECONDS = 0.03  # RMS frame: 480 samples / 960 bytes at 16 kHz (sample-aligned)
-SILENCE_RMS = 0.01  # ~ -40 dBFS on normalized PCM16
+SILENCE_RMS = 0.01  # ~ -40 dBFS: threshold for PLACING a pause cut (not a drop)
+# a segment is DROPPED only when its loudest frame is below this (~ -50 dBFS):
+# far lower than the cut threshold so quiet-but-real speech is never discarded
+GATE_RMS = 0.003
 IDLE_FLUSH_SECONDS = 1.0  # capture stalled/stopped: flush the trailing audio fast
+# audio carried from the end of a segment into the next one, so a word split at
+# a hard-cap boundary is re-transcribed whole in the next segment (the doubled
+# words are removed by _dedup). Cheap (~0.5 s per ≤6 s segment).
+OVERLAP_SECONDS = 0.5
 # hard cap on the audio backlog: if transcription is slower than realtime (common
 # on CPU) the oldest audio is dropped rather than growing memory without bound
 MAX_BUFFER_SECONDS = 30.0
@@ -152,6 +159,8 @@ class _WhisperEngine:
         self._max_segment_bytes = int(sample_rate * MAX_SEGMENT_SECONDS) * 2
         self._silence_frames = round(SILENCE_WINDOW_SECONDS / FRAME_SECONDS)
         self._max_bytes = int(sample_rate * MAX_BUFFER_SECONDS) * 2
+        self._overlap_bytes = int(sample_rate * OVERLAP_SECONDS) * 2
+        self._prev_tail_words: list[str] = []  # last emitted words: prompt + dedup
         self._buffer = bytearray()
         self._lock = threading.Lock()
         self._closed = False
@@ -189,9 +198,13 @@ class _WhisperEngine:
 
     def _is_silent(self, segment: bytes) -> bool:
         """True when no frame of the segment reaches speech level (gates the
-        'subtitles by...' style hallucinations Whisper produces on silence)."""
+        'subtitles by...' style hallucinations Whisper produces on silence).
+
+        Uses GATE_RMS (~-50 dBFS), well below the pause-cut threshold: the bytes
+        are already consumed, so a false positive is permanent word loss —
+        only genuinely silent segments must be dropped."""
         rms = self._frame_rms(segment)
-        return rms.size == 0 or float(rms.max()) < SILENCE_RMS
+        return rms.size == 0 or float(rms.max()) < GATE_RMS
 
     def _take_segment(self) -> bytes | None:
         # everything under the lock: push() deletes from the buffer front, so
@@ -215,7 +228,10 @@ class _WhisperEngine:
                     if candidates.size:
                         cut = (start + int(candidates[0]) + window) * self._frame_bytes
                         segment = bytes(self._buffer[:cut])
-                        del self._buffer[:cut]
+                        # keep OVERLAP_SECONDS of the tail for the next segment so
+                        # a word at the boundary is re-transcribed whole (deduped
+                        # in _transcribe); progress is guaranteed (>= 0.9 s net)
+                        del self._buffer[: max(0, cut - self._overlap_bytes)]
                         return segment
                 # hard cap during unbroken speech: cut at the quietest frame of
                 # the last second before the cap (the closest thing to a pause).
@@ -228,7 +244,9 @@ class _WhisperEngine:
                     j = (max_frames - 1) - int(np.argmin(tail[::-1]))
                     cut = (j + 1) * self._frame_bytes
                     segment = bytes(self._buffer[:cut])
-                    del self._buffer[:cut]
+                    # overlap the tail into the next segment (the boundary word
+                    # is mid-word here, so re-including it recovers it)
+                    del self._buffer[: max(0, cut - self._overlap_bytes)]
                     return segment
             # capture stalled/stopped: flush the trailing audio quickly (while
             # capture runs, push() delivers silent PCM continuously, so idle
@@ -240,14 +258,37 @@ class _WhisperEngine:
                 return segment
             return None
 
+    @staticmethod
+    def _norm(word: str) -> str:
+        return word.lower().strip(".,;:!?¿¡\"'()").strip()
+
+    def _dedup(self, text: str) -> str:
+        """Drop the leading words of ``text`` that repeat the tail of the
+        previous emit (the overlap region is transcribed twice). Longest
+        word-level suffix==prefix match."""
+        if not text or not self._prev_tail_words:
+            return text
+        new = text.split()
+        prev_n = [self._norm(w) for w in self._prev_tail_words]
+        new_n = [self._norm(w) for w in new]
+        for k in range(min(len(prev_n), len(new_n), 8), 0, -1):
+            if prev_n[-k:] == new_n[:k]:
+                return " ".join(new[k:]).strip()
+        return text
+
     def _transcribe(self, segment: bytes) -> None:
         audio = (
             self._np.frombuffer(segment, dtype=self._np.int16).astype("float32") / 32768.0
         )
-        # live-tuned decoding: greedy beam and no temperature fallback keep CPU
-        # cost ~realtime (fewer backlog drops); conditioning off + thresholds +
-        # VAD suppress the repetition/hallucination failure modes of small
-        # models on chunked live audio
+        # Recall-first live decoding. Defaults for the no-speech/log-prob
+        # thresholds (0.6 / -1.0) stop dropping real words; VAD + our silence
+        # gate still block silence hallucinations. beam search and the
+        # temperature fallback recover accuracy but cost 2-3x, so they are used
+        # only on GPU — on CPU they would blow the realtime budget and cause
+        # drop-oldest backlog (worse word loss). The previous segment's tail
+        # words go in as initial_prompt (boundary context WITHOUT the repetition
+        # loops that condition_on_previous_text=True causes on chunked audio).
+        on_gpu = self._device == "cuda"
         # hold the lock across the generator iteration too: faster-whisper's
         # transcribe() is lazy, the actual encode runs while consuming `segments`
         with _CT2_LOCK:
@@ -256,21 +297,24 @@ class _WhisperEngine:
             segments, _info = self._model.transcribe(
                 audio,
                 language=self._language,
-                beam_size=1,
-                temperature=0.0,
+                beam_size=5 if on_gpu else 1,
+                temperature=(0.0, 0.2, 0.4, 0.6) if on_gpu else 0.0,
                 condition_on_previous_text=False,
-                no_speech_threshold=0.5,
-                log_prob_threshold=-0.7,
+                initial_prompt=" ".join(self._prev_tail_words) or None,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
                 vad_filter=True,
                 vad_parameters={
-                    "threshold": 0.4,
+                    "threshold": 0.3,
                     "min_silence_duration_ms": 500,
-                    "speech_pad_ms": 200,
-                    "min_speech_duration_ms": 250,
+                    "speech_pad_ms": 400,
+                    "min_speech_duration_ms": 0,
                 },
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
+        text = self._dedup(text)
         if text and not self._closed:
+            self._prev_tail_words = text.split()[-12:]  # context for the next segment
             self._on_final(text)
 
     def _run(self) -> None:

@@ -56,6 +56,15 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Migliorato
 
+- **Riconoscimento locale: molte meno parole perse (parte 2).** In parlato
+  continuo (video reali) i confini dei segmenti spezzavano le parole e Whisper
+  finiva per inventare o perdere intere frasi. Ora i segmenti si **sovrappongono**
+  di mezzo secondo (le parole di confine vengono ri-trascritte intere, con
+  rimozione automatica dei doppioni), le soglie anti-allucinazione sono riportate
+  a valori che **non scartano parole reali**, e su **GPU** si usano impostazioni
+  di decodifica più accurate (beam search + fallback di temperatura) senza costo
+  di latenza. Su un parlato italiano continuo di prova il recall delle parole è
+  salito dall'87% al 96%, senza più frasi allucinate ai confini.
 - **Riconoscimento locale: molte meno parole perse.** Il motore Faster-Whisper
   tagliava l'audio ogni 4 secondi fissi: le parole a cavallo del taglio venivano
   spezzate o perse a ogni confine. Ora i segmenti terminano **sulle pause del

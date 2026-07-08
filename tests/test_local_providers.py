@@ -473,13 +473,13 @@ def test_composed_different_languages_still_translate():
 # ---------------------------------------------------------------- silence-aware segmentation
 
 
-def _engine(sample_rate: int = 16000):
+def _engine(sample_rate: int = 16000, device: str = "cpu"):
     from app.providers.local_whisper import _WhisperEngine
 
     return _WhisperEngine(
         lambda name, device: object(),  # model never built (thread not started)
         model="small",
-        device="cpu",
+        device=device,
         sample_rate=sample_rate,
         language="it",
         on_partial=lambda t: None,
@@ -511,7 +511,11 @@ def test_take_segment_cuts_at_pause():
     assert segment is not None
     assert len(segment) % engine._frame_bytes == 0  # sample-aligned cut
     assert len(_pcm(2.0, 8000)) < len(segment) <= len(_pcm(2.6, 8000))
-    assert segment + bytes(engine._buffer) == pushed  # no bytes lost
+    # OVERLAP_SECONDS of the tail is retained for the next segment, so buffer
+    # starts overlap_bytes before the cut; dropping that overlap conserves audio
+    cut = len(segment)
+    assert segment == pushed[:cut]
+    assert bytes(engine._buffer) == pushed[cut - engine._overlap_bytes :]
 
 
 def test_take_segment_ignores_pause_before_min_segment():
@@ -567,9 +571,11 @@ def test_idle_flush_flushes_trailing_audio():
     assert not engine._buffer
 
 
-def test_segments_conserve_bytes():
-    # strongest regression guard: every pushed byte comes out in exactly one
-    # segment (speech with pauses, then an idle flush for the tail)
+def test_segments_cover_all_audio_with_overlap():
+    # every pushed byte must appear in at least one segment (no gaps). Segments
+    # now overlap by OVERLAP_SECONDS, so their concatenation is longer than the
+    # input, but reconstructing by trimming each segment's leading overlap must
+    # rebuild the original exactly (no audio lost).
     import time as time_mod
 
     from app.providers.local_whisper import IDLE_FLUSH_SECONDS
@@ -587,7 +593,8 @@ def test_segments_conserve_bytes():
     tail = engine._take_segment()
     if tail:
         segments.append(tail)
-    assert b"".join(segments) == pushed
+    rebuilt = segments[0] + b"".join(s[engine._overlap_bytes :] for s in segments[1:])
+    assert rebuilt == pushed  # all audio covered, nothing lost
 
 
 def test_silence_gate():
@@ -604,13 +611,62 @@ def test_transcribe_passes_live_tuned_options():
             captured.update(kwargs)
             return [], None
 
-    engine = _engine()
+    engine = _engine(device="cpu")
     engine._model = StubModel()
     engine._transcribe(_pcm(2.0, 8000))
     assert captured["vad_filter"] is True
-    assert captured["condition_on_previous_text"] is False
+    assert captured["condition_on_previous_text"] is False  # never (loop floods)
+    # recall-first defaults so real words are not dropped
+    assert captured["no_speech_threshold"] == 0.6
+    assert captured["log_prob_threshold"] == -1.0
+    # the expensive levers are CPU-cheap here (realtime budget)
     assert captured["beam_size"] == 1
     assert captured["temperature"] == 0.0
+
+
+def test_transcribe_uses_gpu_recall_settings_on_cuda():
+    captured = {}
+
+    class StubModel:
+        def transcribe(self, audio, **kwargs):
+            captured.update(kwargs)
+            return [], None
+
+    engine = _engine(device="cuda")
+    engine._model = StubModel()
+    engine._transcribe(_pcm(2.0, 8000))
+    # on GPU we can afford beam search + a temperature fallback for recall
+    assert captured["beam_size"] == 5
+    assert captured["temperature"] == (0.0, 0.2, 0.4, 0.6)
+
+
+def test_transcribe_dedups_overlap_and_carries_context():
+    # the overlap region is transcribed twice: the leading words that repeat the
+    # previous emit's tail must be dropped, and the tail is carried forward
+    finals: list[str] = []
+
+    class StubModel:
+        def __init__(self):
+            self._texts = iter(
+                ["il nostro sistema cattura", "sistema cattura l audio in tempo reale"]
+            )
+
+        def transcribe(self, audio, **kwargs):
+            class Seg:
+                text = next(self._model_texts)
+
+            return [Seg()], None
+
+    engine = _engine()
+    stub = StubModel()
+    engine._model = stub
+    stub._model_texts = stub._texts
+    engine._on_final = finals.append
+    engine._transcribe(_pcm(2.0, 8000))
+    engine._transcribe(_pcm(2.0, 8000))
+    # the doubled "sistema cattura" is removed from the second emit
+    assert finals == ["il nostro sistema cattura", "l audio in tempo reale"]
+    assert engine._prev_tail_words == "l audio in tempo reale".split()[-12:]
 
 
 # ------------------------------------------------------------------ GPU load error
