@@ -36,6 +36,15 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
   immediato. Funziona anche nella versione installata (prima i provider locali
   richiedevano l'esecuzione dal sorgente).
 
+### Corretto
+
+- **Finestra Impostazioni troppo stretta con scrollbar orizzontale** (evidente su
+  Windows 10): un nome di dispositivo audio lungo e l'etichetta di stato dei
+  modelli imponevano al contenuto una larghezza enorme (~1500 px). Ora le tendine
+  possono restringersi (elidono il testo corrente; l'elenco mostra comunque le
+  voci intere), l'etichetta di stato va a capo, e la finestra si apre abbastanza
+  larga da mostrare tutti i campi senza barra orizzontale.
+
 ### Migliorato
 
 - **Riconoscimento locale: molte meno parole perse.** Il motore Faster-Whisper

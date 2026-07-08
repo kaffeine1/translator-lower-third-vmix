@@ -188,6 +188,10 @@ class SettingsDialog(QDialog):
         # the models: keeps the installer light while making local providers
         # one click away for the operator
         self.runtime_status_label = QLabel()
+        # its text can be long (e.g. "…da scaricare (repo1, repo2)"): without
+        # wrapping its minimum width forced the dialog ~1500 px wide + a
+        # horizontal scrollbar
+        self.runtime_status_label.setWordWrap(True)
         local_form.addRow(self.runtime_status_label)
         self.btn_download_runtime = QPushButton()  # label set by _sync_runtime_button_label
         self.btn_download_runtime.setObjectName("btn_download_runtime")
@@ -273,6 +277,18 @@ class SettingsDialog(QDialog):
         layout.addWidget(overlay_box)
 
         layout.addStretch()
+        # A combo defaults to demanding the width of its LONGEST item as its
+        # minimum (e.g. a long audio-device name forced ~714 px), which made the
+        # content ~1554 px wide and produced a horizontal scrollbar. Let every
+        # combo shrink instead (it elides the current text; the popup still shows
+        # full items): the fields still stretch to the form width, but no longer
+        # dictate the dialog width.
+        for combo in content.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            combo.setMinimumContentsLength(16)
+
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
@@ -285,20 +301,25 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
 
-        # Open large enough to show the content at its natural width — a
-        # QScrollArea's own sizeHint is narrow, so we must size from the content
-        # and add room for the vertical scrollbar (so it never clips the fields).
-        # Never exceed the available screen (so the buttons stay reachable).
+        # Open wide enough to show the content without a horizontal scrollbar.
+        # The viewport width = dialog width - the dialog's own layout margins -
+        # the vertical scrollbar; it must be >= the content's required width, so
+        # add ALL of that chrome (the previous +4 ignored the ~22 px dialog
+        # margins, leaving the fields a hair too narrow). Never exceed the
+        # available screen (so the buttons stay reachable).
         hint = content.sizeHint()
+        needed = max(hint.width(), content.minimumSizeHint().width())
         vbar_w = scroll.verticalScrollBar().sizeHint().width()
+        margins = outer.contentsMargins()
+        chrome = vbar_w + margins.left() + margins.right() + 4
         screen = self.screen() or QApplication.primaryScreen()
         avail = screen.availableGeometry() if screen else None
         avail_h = avail.height() if avail else 900
         avail_w = avail.width() if avail else 1200
         max_h = max(360, avail_h - 80)
-        width = max(self.minimumWidth(), hint.width() + vbar_w + 4)
+        width = max(self.minimumWidth(), needed + chrome)
         self.setMaximumHeight(max_h)
-        self.resize(min(width, avail_w - 80), min(hint.height() + 90, max_h))
+        self.resize(min(width, avail_w - 40), min(hint.height() + 90, max_h))
 
     # ------------------------------------------------------------------ data
 

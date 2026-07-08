@@ -931,3 +931,35 @@ def test_download_disables_remove_button_too(qapp, monkeypatch, tmp_path):
     assert not dialog.btn_download_models.isEnabled()
     release.set()
     assert _process_until(qapp, lambda: dialog.btn_remove_models.isEnabled())
+
+
+def test_settings_content_fits_without_wide_horizontal_scroll(qapp):
+    # regression: a long audio-device name + the long model-state label used to
+    # force the content ~1554 px wide (horizontal scrollbar on Windows 10).
+    # Combos must shrink and the status label must wrap, keeping the content
+    # within a normal window width.
+    from PySide6.QtWidgets import QComboBox, QScrollArea
+
+    from app.audio.devices import AudioDevice
+
+    devices = [
+        AudioDevice(
+            id="x",
+            name="Uscita di sistema: Speakers (Realtek(R) Audio) (loopback)",
+            channels=2,
+            loopback=True,
+        )
+    ]
+    dialog = SettingsDialog(AppConfig(), devices)
+    scroll = dialog.findChild(QScrollArea)
+    content = scroll.widget()
+    # comfortably within any real screen (was 1554 before the fix)
+    assert content.minimumSizeHint().width() < 900
+    # the status label wraps (its long text no longer dictates the width)
+    assert dialog.runtime_status_label.wordWrap() is True
+    # combos can shrink below their longest item
+    for combo in content.findChildren(QComboBox):
+        assert (
+            combo.sizeAdjustPolicy()
+            == QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
