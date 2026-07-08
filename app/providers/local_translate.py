@@ -89,14 +89,36 @@ class LocalMarianTranslationProvider(TranslationProvider):
         self._translate_fn = None
 
 
+def _local_component_error(exc: Exception) -> str:
+    # ModuleNotFoundError = the local component was never downloaded; any other
+    # import failure (typically a Windows "DLL load failed") = the component is
+    # present but cannot load — a different, non-obvious problem for the operator
+    # (often a missing Microsoft Visual C++ Redistributable), so point them at
+    # the log instead of the downloader.
+    key = (
+        "local.components_not_downloaded"
+        if isinstance(exc, ModuleNotFoundError)
+        else "local.components_load_failed"
+    )
+    return t(key)
+
+
 def _make_real_translator(model_name: str) -> Callable[[str], str]:
     # transformers 5 removed the "translation" pipeline task, so build the
-    # seq2seq model directly — this works on transformers 4.x and 5.x alike
+    # seq2seq model directly — this works on transformers 4.x and 5.x alike.
+    # Import torch and transformers separately and log the real error: a bare
+    # "not installed" message hides whether the component is missing or present
+    # but failing to load (e.g. a DLL load error).
     try:
-        import torch
+        import torch  # noqa: F401
+    except Exception as exc:
+        logger.warning("Import di 'torch' fallito", exc_info=True)
+        raise LocalTranslationError(_local_component_error(exc)) from exc
+    try:
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-    except ImportError:
-        raise LocalTranslationError(t("local.transformers_not_installed")) from None
+    except Exception as exc:
+        logger.warning("Import di 'transformers' fallito", exc_info=True)
+        raise LocalTranslationError(_local_component_error(exc)) from exc
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)

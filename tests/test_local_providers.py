@@ -218,9 +218,23 @@ def test_marian_real_model_missing_package_is_readable(monkeypatch):
         await provider.connect(ProviderConfig())
         with pytest.raises(LocalTranslationError) as excinfo:
             await provider.translate("hola")
-        assert "transformers" in str(excinfo.value)
+        # operator-readable message that points at the log or the downloader
+        msg = str(excinfo.value)
+        assert "componenti" in msg.lower()
 
     asyncio.run(run())
+
+
+def test_local_component_error_distinguishes_missing_vs_broken():
+    from app.providers.local_translate import _local_component_error
+
+    # a genuinely absent package -> "download the components"
+    missing = _local_component_error(ModuleNotFoundError("No module named 'torch'"))
+    assert "Scarica" in missing
+    # present but failing to load (e.g. a DLL load error) -> point at the log
+    broken = _local_component_error(ImportError("DLL load failed while importing torch"))
+    assert "Log" in broken or "Visual C++" in broken
+    assert missing != broken
 
 
 # ---------------------------------------------------------------- composed local
