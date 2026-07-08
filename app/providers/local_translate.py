@@ -90,14 +90,21 @@ class LocalMarianTranslationProvider(TranslationProvider):
 
 
 def _local_component_error(exc: Exception) -> str:
-    # ModuleNotFoundError = the local component was never downloaded; any other
-    # import failure (typically a Windows "DLL load failed") = the component is
-    # present but cannot load — a different, non-obvious problem for the operator
-    # (often a missing Microsoft Visual C++ Redistributable), so point them at
-    # the log instead of the downloader.
+    # Distinguish "the component package is genuinely absent" (download it) from
+    # "the package is present but its import fails" (a broken environment — point
+    # at the log). A ModuleNotFoundError raised from DEEP INSIDE a present package
+    # (e.g. torch importing a stdlib module the frozen app did not bundle, so
+    # exc.name == "timeit") must NOT read as "not downloaded", or the operator
+    # re-downloads for nothing.
+    missing = getattr(exc, "name", "") or ""
+    absent_component = isinstance(exc, ModuleNotFoundError) and missing in {
+        "torch",
+        "transformers",
+        "sentencepiece",
+    }
     key = (
         "local.components_not_downloaded"
-        if isinstance(exc, ModuleNotFoundError)
+        if absent_component
         else "local.components_load_failed"
     )
     return t(key)

@@ -38,6 +38,13 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Corretto
 
+- **Traduzione locale ora funziona davvero dall'app installata.** L'eseguibile non
+  includeva alcuni moduli della libreria standard di Python che `torch` usa
+  (es. `timeit`), quindi la traduzione con modelli locali (es. Spagnolo→Italiano)
+  falliva sempre dall'exe installato con un errore fuorviante di "componenti non
+  scaricati". Ora l'app include l'intera libreria standard e la traduzione locale
+  parte. (La sottotitolazione senza traduzione funzionava già perché non usa
+  `torch`.)
 - **Componenti locali sempre ri-scaricabili (riparazione).** Se i file dei
   componenti locali (torch, transformers…) venivano rimossi da una pulizia disco
   o dall'antivirus mentre il segnaposto di "installazione completata" restava,

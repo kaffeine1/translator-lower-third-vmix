@@ -13,6 +13,7 @@ Build:  pyinstaller --noconfirm --clean TranslatorLowerThird.spec
 
 import os
 import re
+import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 from PyInstaller.utils.win32.versioninfo import (
@@ -97,6 +98,18 @@ hiddenimports += [
     "app.providers.fake",
     "websockets",
 ]
+
+# The downloadable runtime pack (torch, transformers, faster-whisper) imports
+# standard-library modules that the app itself never references, so PyInstaller
+# does not bundle them and the frozen app raises ModuleNotFoundError at runtime
+# (observed: torch imports `timeit`). Bundle the whole stdlib so any module the
+# pack needs is present; a few unwanted heavy/dev-only packages are left out and
+# tkinter stays in `excludes` below.
+_stdlib_skip = {
+    "tkinter", "turtle", "turtledemo", "test", "idlelib", "lib2to3",
+    "antigravity", "this", "ensurepip", "venv", "distutils", "pydoc_data",
+}
+hiddenimports += [m for m in sys.stdlib_module_names if m not in _stdlib_skip]
 
 
 # The heavy local-provider packages ship via the downloadable runtime pack

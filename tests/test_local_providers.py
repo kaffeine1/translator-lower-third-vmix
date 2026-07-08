@@ -228,13 +228,17 @@ def test_marian_real_model_missing_package_is_readable(monkeypatch):
 def test_local_component_error_distinguishes_missing_vs_broken():
     from app.providers.local_translate import _local_component_error
 
-    # a genuinely absent package -> "download the components"
-    missing = _local_component_error(ModuleNotFoundError("No module named 'torch'"))
+    # a genuinely absent package (import x fails with x itself missing) -> download
+    missing = _local_component_error(ModuleNotFoundError("No module named 'torch'", name="torch"))
     assert "Scarica" in missing
-    # present but failing to load (e.g. a DLL load error) -> point at the log
+    # a stdlib sub-dependency missing deep inside a PRESENT package (torch ->
+    # timeit) is a broken environment, not a missing download -> point at the log
+    subdep = _local_component_error(ModuleNotFoundError("No module named 'timeit'", name="timeit"))
+    assert "Log" in subdep or "Visual C++" in subdep
+    # a DLL load error -> also broken/see the log
     broken = _local_component_error(ImportError("DLL load failed while importing torch"))
     assert "Log" in broken or "Visual C++" in broken
-    assert missing != broken
+    assert missing != subdep
 
 
 # ---------------------------------------------------------------- composed local
