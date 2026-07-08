@@ -664,3 +664,54 @@ def test_whisper_cpu_load_failure_uses_generic_message():
     )
     engine._run()
     assert errors == [t("local.whisper_model_load_failed")]
+
+
+def test_transcriptions_are_serialized_across_engines():
+    # two engines encoding at once corrupted the heap (0xc0000374): the global
+    # lock must prevent their transcribe() calls from overlapping
+    import threading
+    import time
+
+    from app.providers.local_whisper import _WhisperEngine
+
+    concurrency = {"now": 0, "max": 0}
+    clock_lock = threading.Lock()
+
+    class Seg:
+        text = "ciao"
+
+    class BlockingModel:
+        def __init__(self, name, device):
+            pass
+
+        def transcribe(self, audio, **kw):
+            with clock_lock:
+                concurrency["now"] += 1
+                concurrency["max"] = max(concurrency["max"], concurrency["now"])
+            time.sleep(0.05)  # hold the "encode" so an overlap would be visible
+            with clock_lock:
+                concurrency["now"] -= 1
+            return [Seg()], None
+
+    def make_engine():
+        return _WhisperEngine(
+            BlockingModel,
+            model="small",
+            device="cpu",
+            sample_rate=16000,
+            language="it",
+            on_partial=lambda _t: None,
+            on_final=lambda _t: None,
+            on_error=lambda _t: None,
+        )
+
+    seg = b"\x10\x00" * 16000  # 1 s of non-silent PCM16
+    engines = [make_engine(), make_engine()]
+    for e in engines:
+        e._model = BlockingModel("small", "cpu")
+    threads = [threading.Thread(target=e._transcribe, args=(seg,)) for e in engines]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(timeout=3)
+    assert concurrency["max"] == 1  # never two encodes at once

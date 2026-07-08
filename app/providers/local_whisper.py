@@ -42,6 +42,14 @@ MAX_BUFFER_SECONDS = 30.0
 DEFAULT_MODEL = "small"
 DEFAULT_DEVICE = "cpu"
 
+# CTranslate2 model load + inference are serialized process-wide. A rapid
+# STOP/START can leave a previous engine still finishing an encode while the new
+# one starts: two CTranslate2 models running encode() concurrently corrupted the
+# heap (Windows 0xc0000374). With a single live engine this lock has no
+# steady-state cost; during teardown it makes the lingering encode finish before
+# the next one begins.
+_CT2_LOCK = threading.Lock()
+
 TextCb = Callable[[str], None]
 EngineFactory = Callable[..., "object"]
 
@@ -240,29 +248,37 @@ class _WhisperEngine:
         # cost ~realtime (fewer backlog drops); conditioning off + thresholds +
         # VAD suppress the repetition/hallucination failure modes of small
         # models on chunked live audio
-        segments, _info = self._model.transcribe(
-            audio,
-            language=self._language,
-            beam_size=1,
-            temperature=0.0,
-            condition_on_previous_text=False,
-            no_speech_threshold=0.5,
-            log_prob_threshold=-0.7,
-            vad_filter=True,
-            vad_parameters={
-                "threshold": 0.4,
-                "min_silence_duration_ms": 500,
-                "speech_pad_ms": 200,
-                "min_speech_duration_ms": 250,
-            },
-        )
-        text = " ".join(seg.text.strip() for seg in segments).strip()
+        # hold the lock across the generator iteration too: faster-whisper's
+        # transcribe() is lazy, the actual encode runs while consuming `segments`
+        with _CT2_LOCK:
+            if self._closed:
+                return
+            segments, _info = self._model.transcribe(
+                audio,
+                language=self._language,
+                beam_size=1,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                no_speech_threshold=0.5,
+                log_prob_threshold=-0.7,
+                vad_filter=True,
+                vad_parameters={
+                    "threshold": 0.4,
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 200,
+                    "min_speech_duration_ms": 250,
+                },
+            )
+            text = " ".join(seg.text.strip() for seg in segments).strip()
         if text and not self._closed:
             self._on_final(text)
 
     def _run(self) -> None:
         try:
-            self._model = self._model_cls(self._model_name, device=self._device)
+            # serialized with inference: never build a new model while another
+            # engine is mid-encode (see _CT2_LOCK)
+            with _CT2_LOCK:
+                self._model = self._model_cls(self._model_name, device=self._device)
         except Exception:
             if not self._closed:
                 # full traceback: "missing cublas64_12.dll" is undiagnosable
