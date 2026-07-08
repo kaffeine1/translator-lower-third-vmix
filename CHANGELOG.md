@@ -5,6 +5,22 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Aggiunto
+
+- **Traduzione nativa Google e Azure (un solo fornitore).** Le pipeline cloud ora
+  sono **«Google Speech → Google Translate»** e **«Azure Speech → Azure
+  Translator»**: basta un unico account/chiave per fornitore. Google Translate usa
+  una **chiave API** (in aggiunta al file JSON del riconoscimento vocale); Azure
+  Translator riusa la **stessa chiave e regione** di Azure Speech (risorsa
+  multiservizio). I nuovi provider di traduzione sono chiamate REST leggere.
+
+### Rimosso
+
+- **Pipeline miste con DeepL** («Google Speech → DeepL» e «Azure Speech → DeepL»)
+  rimosse dal selettore, sostituite dalle pipeline a fornitore unico qui sopra.
+
 ## [0.3.0] — 2026-07-08
 
 ### Aggiunto

@@ -286,18 +286,21 @@ procedura guidata). Le voci disponibili sono:
 | **OpenAI Realtime** | Chiave API OpenAI | Traduzione in tempo reale via API OpenAI. |
 | **Demo (senza API)** | Nessuna | Mostra frasi di esempio: ideale per collaudare audio e vMix senza spese. |
 | **Demo (speech + traduzione separati)** | Nessuna | Come sopra, ma simula la pipeline "voce + traduzione" separate. |
-| **Google Speech → DeepL** | Credenziali Google + chiave DeepL | Riconoscimento vocale Google, traduzione DeepL. |
-| **Azure Speech → DeepL** | Chiave Azure + regione Azure + chiave DeepL | Riconoscimento vocale Azure, traduzione DeepL. |
+| **Google Speech → Google Translate** | Credenziali Google (JSON) + chiave API Google Translate | Tutto su Google: un solo fornitore. |
+| **Azure Speech → Azure Translator** | Chiave Azure + regione Azure | Tutto su Azure con la stessa chiave/regione (risorsa multiservizio). |
 | **Locale (Faster-Whisper → MarianMT)** | Nessuna | Offline: riconoscimento e traduzione sul tuo PC. Richiede componenti aggiuntivi e hardware adeguato. |
 
 Dettagli sulle credenziali:
 
 - **OpenAI**: incolla la chiave API (inizia con `sk-...`). Serve un **accesso API**
   con credito: un abbonamento ChatGPT Plus/Pro **non** è la stessa cosa (vedi FAQ).
-- **DeepL**: chiave API DeepL (le chiavi gratuite terminano con `:fx`).
 - **Google**: percorso del file JSON delle credenziali di un *service account*
-  con accesso a Speech-to-Text.
+  con accesso a Speech-to-Text. Per **Google → Google** serve anche una **chiave
+  API** Google (con l'API *Cloud Translation* abilitata): il riconoscimento usa il
+  file JSON, la traduzione usa la chiave API.
 - **Azure**: chiave del servizio *Speech* **e** la **regione** (es. `westeurope`).
+  Per **Azure → Azure** la stessa chiave e regione traducono anche il testo, se la
+  risorsa Azure è **multiservizio** (Azure AI services).
 
 > **Provider locali**: la parte software è presente, ma per usarli servono
 > componenti aggiuntivi (elencati in `requirements-optional.txt`) e, per essere

@@ -628,14 +628,16 @@ Provider-specific settings panels
 
 ## v1.2 — Alternative Cloud Providers
 
-> **Status: ✅ mostly completed 2026-07-04** — `DeepLTranslationProvider`
-> (translation), `GoogleSpeechProvider` and `AzureSpeechProvider` (cloud STT)
-> implemented (vendor SDKs behind injectable engine factories, optional deps,
-> lazy import, mocked tests, live gated on API keys + `RUN_LIVE_TESTS=1`); the
-> composed pipelines "Google Speech → DeepL" and "Azure Speech → DeepL" are
-> selectable from the GUI with per-provider dynamic credential fields stored
-> securely. **Remaining:** Google Translate / Azure Translator as alternative
-> translation engines, and a real end-to-end validation with vendor keys.
+> **Status: ✅ completed 2026-07-08** — `DeepLTranslationProvider`,
+> `GoogleTranslateProvider`, `AzureTranslatorProvider` (translation),
+> `GoogleSpeechProvider` and `AzureSpeechProvider` (cloud STT) implemented
+> (REST/httpx or vendor SDKs behind injectable factories, optional deps, lazy
+> import, mocked tests, live gated on API keys + `RUN_LIVE_TESTS=1`); the
+> composed pipelines "Google Speech → Google Translate", "Azure Speech → Azure
+> Translator", "Google Speech → DeepL" and "Azure Speech → DeepL" are selectable
+> from the GUI with per-provider dynamic credential fields stored securely. The
+> same-vendor pipelines need only one account/key per vendor. **Remaining:** a
+> real end-to-end validation with vendor keys.
 
 ### Goal
 

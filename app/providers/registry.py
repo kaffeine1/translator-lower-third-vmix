@@ -38,6 +38,9 @@ class CredentialField:
 _CRED_OPENAI = CredentialField("openai", "cred.openai_key")
 _CRED_DEEPL = CredentialField("deepl", "cred.deepl_key")
 _CRED_GOOGLE = CredentialField("google", "cred.google_credentials", secret=False)
+# Google Cloud Translation (v2 REST) uses an API key, distinct from the service
+# account JSON that Google Speech uses.
+_CRED_GOOGLE_TRANSLATE = CredentialField("google-translate", "cred.google_translate_key")
 _CRED_AZURE = CredentialField("azure", "cred.azure_key")
 _CRED_AZURE_REGION = CredentialField("azure-region", "cred.azure_region", secret=False)
 
@@ -62,11 +65,15 @@ _REGISTRY: dict[str, ProviderInfo] = {
     "openai": ProviderInfo("openai", "OpenAI Realtime", (_CRED_OPENAI,)),
     "fake": ProviderInfo("fake", "Demo (senza API)"),
     "demo-composed": ProviderInfo("demo-composed", "Demo (speech + traduzione separati)"),
-    "google-deepl": ProviderInfo(
-        "google-deepl", "Google Speech → DeepL", (_CRED_GOOGLE, _CRED_DEEPL)
+    "google-google": ProviderInfo(
+        "google-google",
+        "Google Speech → Google Translate",
+        (_CRED_GOOGLE, _CRED_GOOGLE_TRANSLATE),
     ),
-    "azure-deepl": ProviderInfo(
-        "azure-deepl", "Azure Speech → DeepL", (_CRED_AZURE, _CRED_AZURE_REGION, _CRED_DEEPL)
+    "azure-azure": ProviderInfo(
+        "azure-azure",
+        "Azure Speech → Azure Translator",
+        (_CRED_AZURE, _CRED_AZURE_REGION),
     ),
     # local (offline) pipeline: no credentials, needs the optional local packages
     "local": ProviderInfo("local", "Locale (Faster-Whisper → MarianMT)"),
@@ -109,10 +116,10 @@ def create_provider(
         from app.providers.openai_realtime import OpenAIRealtimeTranslationProvider
 
         return OpenAIRealtimeTranslationProvider(secret_store, "openai")
-    if provider_id == "google-deepl":
-        return create_composed_provider("google", "deepl", secret_store)
-    if provider_id == "azure-deepl":
-        return create_composed_provider("azure", "deepl", secret_store)
+    if provider_id == "google-google":
+        return create_composed_provider("google", "google-translate", secret_store)
+    if provider_id == "azure-azure":
+        return create_composed_provider("azure", "azure-translator", secret_store)
     if provider_id == "local":
         return create_composed_provider("faster-whisper", "marian", secret_store, config)
     raise ValueError(f"Provider sconosciuto: {provider_id}")
@@ -193,6 +200,12 @@ def create_composed_provider(
 _TRANSLATION_REGISTRY: dict[str, ProviderInfo] = {
     "fake-text": ProviderInfo("fake-text", "Demo (traduzione testo)"),
     "deepl": ProviderInfo("deepl", "DeepL", (_CRED_DEEPL,)),
+    "google-translate": ProviderInfo(
+        "google-translate", "Google Translate", (_CRED_GOOGLE_TRANSLATE,)
+    ),
+    "azure-translator": ProviderInfo(
+        "azure-translator", "Azure Translator", (_CRED_AZURE, _CRED_AZURE_REGION)
+    ),
     "marian": ProviderInfo("marian", "MarianMT (locale)"),
 }
 
@@ -216,6 +229,14 @@ def create_translation_provider(
         from app.providers.deepl import DeepLTranslationProvider
 
         return DeepLTranslationProvider(secret_store, "deepl")
+    if provider_id == "google-translate":
+        from app.providers.google_translate import GoogleTranslateProvider
+
+        return GoogleTranslateProvider(secret_store, "google-translate")
+    if provider_id == "azure-translator":
+        from app.providers.azure_translate import AzureTranslatorProvider
+
+        return AzureTranslatorProvider(secret_store, "azure", "azure-region")
     if provider_id == "marian":
         from app.providers.local_translate import LocalMarianTranslationProvider
 

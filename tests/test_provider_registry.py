@@ -27,22 +27,22 @@ def test_registry_lists_openai_and_demo():
 
 def test_registry_lists_composed_cloud_pipelines():
     ids = [info.id for info in available_providers()]
-    assert "google-deepl" in ids
-    assert "azure-deepl" in ids
+    assert "google-google" in ids
+    assert "azure-azure" in ids
 
 
 def test_composed_provider_required_keys():
-    assert get_provider_info("google-deepl").required_key_names == ("google", "deepl")
-    assert get_provider_info("azure-deepl").required_key_names == (
-        "azure", "azure-region", "deepl",
+    assert get_provider_info("google-google").required_key_names == (
+        "google", "google-translate",
     )
+    assert get_provider_info("azure-azure").required_key_names == ("azure", "azure-region")
 
 
 def test_composed_provider_credential_fields():
-    creds = get_provider_info("azure-deepl").credentials
+    creds = get_provider_info("azure-azure").credentials
     accounts = [c.account for c in creds]
-    assert accounts == ["azure", "azure-region", "deepl"]
-    # region and google path are plain (non-secret) fields
+    assert accounts == ["azure", "azure-region"]
+    # region is a plain (non-secret) field
     region = next(c for c in creds if c.account == "azure-region")
     assert region.secret is False
 
@@ -52,8 +52,8 @@ def test_create_composed_cloud_provider():
 
     store = InMemorySecretStore()
     store.set_api_key("google", "/creds.json")
-    store.set_api_key("deepl", "k:fx")
-    provider = create_provider("google-deepl", store)
+    store.set_api_key("google-translate", "gt-key")
+    provider = create_provider("google-google", store)
     assert isinstance(provider, ComposedRealtimeProvider)
 
 
@@ -61,11 +61,11 @@ def test_all_credential_accounts():
     from app.providers.registry import all_credential_accounts
 
     accounts = all_credential_accounts()
-    assert {"openai", "google", "azure", "azure-region", "deepl"} <= accounts
+    assert {"openai", "google", "google-translate", "azure", "azure-region"} <= accounts
 
 
 def test_make_provider_composed_falls_back_to_demo_without_keys():
-    services = _services("google-deepl", with_key=False)
+    services = _services("google-google", with_key=False)
     assert isinstance(services._make_provider(), FakeTranslationProvider)
 
 
@@ -74,16 +74,16 @@ def test_make_provider_composed_with_all_keys():
 
     store = InMemorySecretStore()
     store.set_api_key("google", "/creds.json")
-    store.set_api_key("deepl", "k:fx")
+    store.set_api_key("google-translate", "gt-key")
     services = LiveAppServices(FakeAudioInput(), store)
     config = AppConfig()
-    config.provider = "google-deepl"
+    config.provider = "google-google"
     services.update_config(config)
     assert isinstance(services._make_provider(), ComposedRealtimeProvider)
 
 
 def test_test_api_composed_missing_keys_is_error():
-    services = _services("azure-deepl", with_key=False)
+    services = _services("azure-azure", with_key=False)
     result = services.test_api()
     assert result.ok is False
 
@@ -92,10 +92,9 @@ def test_test_api_composed_present_keys_ok_without_live_check():
     store = InMemorySecretStore()
     store.set_api_key("azure", "k")
     store.set_api_key("azure-region", "westeurope")
-    store.set_api_key("deepl", "d:fx")
     services = LiveAppServices(FakeAudioInput(), store)
     config = AppConfig()
-    config.provider = "azure-deepl"
+    config.provider = "azure-azure"
     services.update_config(config)
     result = services.test_api()
     assert result.ok is True

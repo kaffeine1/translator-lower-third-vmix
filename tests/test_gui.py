@@ -401,15 +401,15 @@ def test_settings_dialog_dynamic_credentials_per_provider(qapp):
     from PySide6.QtWidgets import QLineEdit
 
     config = AppConfig()
-    config.provider = "azure-deepl"
+    config.provider = "azure-azure"
     dialog = SettingsDialog(config, [])
     # composed cloud pipeline -> one field per credential
-    assert set(dialog._cred_edits) == {"azure", "azure-region", "deepl"}
+    assert set(dialog._cred_edits) == {"azure", "azure-region"}
     assert dialog._cred_edits["azure"].echoMode() == QLineEdit.EchoMode.Password
     # region is not a secret -> normal (visible) field
     assert dialog._cred_edits["azure-region"].echoMode() == QLineEdit.EchoMode.Normal
-    dialog._cred_edits["deepl"].setText("dk:fx")
-    assert dialog.entered_credentials() == {"deepl": "dk:fx"}
+    dialog._cred_edits["azure"].setText("az-key")
+    assert dialog.entered_credentials() == {"azure": "az-key"}
 
 
 def test_settings_dialog_local_model_and_device(qapp):
@@ -435,9 +435,9 @@ def test_settings_dialog_demo_provider_has_no_credentials(qapp):
 def test_settings_dialog_switching_provider_rebuilds_credentials(qapp):
     dialog = SettingsDialog(AppConfig(), [])  # openai
     assert set(dialog._cred_edits) == {"openai"}
-    idx = dialog.provider_combo.findData("google-deepl")
+    idx = dialog.provider_combo.findData("google-google")
     dialog.provider_combo.setCurrentIndex(idx)
-    assert set(dialog._cred_edits) == {"google", "deepl"}
+    assert set(dialog._cred_edits) == {"google", "google-translate"}
 
 
 def test_settings_dialog_preserves_values_not_in_combo_lists(qapp):
@@ -504,16 +504,16 @@ def test_wizard_credentials_page_dynamic_and_saved(qapp):
     services = MockAppServices()
     store = InMemorySecretStore()
     config = AppConfig()
-    config.provider = "google-deepl"
+    config.provider = "google-google"
     wizard = FirstRunWizard(config, services.list_audio_devices(), services, store)
     page = wizard._credentials_page
     page.initializePage()  # Qt calls this when the page is shown
-    assert set(page._edits) == {"google", "deepl"}
+    assert set(page._edits) == {"google", "google-translate"}
     page._edits["google"].setText("/creds.json")
-    page._edits["deepl"].setText("dk:fx")
+    page._edits["google-translate"].setText("gt-key")
     assert page.validatePage() is True
     assert store.get_api_key("google") == "/creds.json"
-    assert store.get_api_key("deepl") == "dk:fx"
+    assert store.get_api_key("google-translate") == "gt-key"
 
 
 def test_wizard_credentials_none_for_demo(qapp):
@@ -530,9 +530,9 @@ def test_wizard_credentials_none_for_demo(qapp):
 def test_wizard_provider_selection_in_result(qapp):
     services = MockAppServices()
     wizard = FirstRunWizard(AppConfig(), services.list_audio_devices(), services)
-    idx = wizard.provider_combo.findData("azure-deepl")
+    idx = wizard.provider_combo.findData("azure-azure")
     wizard.provider_combo.setCurrentIndex(idx)
-    assert wizard.result_config().provider == "azure-deepl"
+    assert wizard.result_config().provider == "azure-azure"
 
 
 def test_wizard_vmix_test_uses_typed_values(qapp):
