@@ -56,6 +56,15 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Migliorato
 
+- **Riconoscimento locale molto più reattivo (streaming).** Prima un sottotitolo
+  compariva solo a segmento concluso: in parlato continuo si aspettavano ~6-8
+  secondi. Ora il testo viene mostrato **man mano che si parla**: il motore
+  ri-trascrive l'audio in arrivo ogni ~0,7 s (GPU) / ~1,2 s (CPU) e mostra un
+  **parziale stabilizzato** (mostra solo le parole confermate da due passaggi,
+  in modo che il testo già visibile non venga mai riscritto → niente
+  sfarfallio), poi "fissa" la frase alla pausa. Su prova: primo testo da ~8,7 s
+  a ~3,4 s su CPU (`base`), atteso ~1,5-2 s su GPU. Per la bassa latenza usare
+  **`small` o `medium`**; `large-v3` in tempo reale richiede una GPU potente.
 - **Riconoscimento locale: molte meno parole perse (parte 2).** In parlato
   continuo (video reali) i confini dei segmenti spezzavano le parole e Whisper
   finiva per inventare o perdere intere frasi. Ora i segmenti si **sovrappongono**

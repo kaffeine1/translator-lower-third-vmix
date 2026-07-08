@@ -30,7 +30,15 @@ logger = logging.getLogger("app.providers.local_whisper")
 # interval, so words are no longer bisected at segment boundaries (the main
 # source of lost words in live use).
 MIN_SEGMENT_SECONDS = 1.0  # Whisper hallucinates on sub-second clips
-MAX_SEGMENT_SECONDS = 6.0  # hard latency cap during unbroken speech
+# hard cap for a FINAL segment. Kept at 6 s (not lowered) for recall: a longer
+# window gives Whisper more right-context per segment. Felt latency no longer
+# depends on it — the streaming partials below provide the low latency — so the
+# cap only trades re-encode cost for accuracy.
+MAX_SEGMENT_SECONDS = 6.0
+# how often to re-transcribe the growing buffer and emit a stabilized PARTIAL
+# (streaming): felt latency is now this cadence, not the segment length
+PARTIAL_INTERVAL_CUDA_S = 0.7
+PARTIAL_INTERVAL_CPU_S = 1.2
 SILENCE_WINDOW_SECONDS = 0.4  # inter-phrase pause length that triggers a cut
 FRAME_SECONDS = 0.03  # RMS frame: 480 samples / 960 bytes at 16 kHz (sample-aligned)
 SILENCE_RMS = 0.01  # ~ -40 dBFS: threshold for PLACING a pause cut (not a drop)
@@ -148,9 +156,21 @@ class _WhisperEngine:
         self._device = device
         self._sample_rate = sample_rate
         self._language = (language or "").lower() or None
+        self._on_partial = on_partial
         self._on_final = on_final
         self._on_error = on_error
         self._model = None  # loaded lazily on the worker thread
+        # streaming partials off the growing buffer, stabilized (LocalAgreement)
+        self._partial_interval = (
+            PARTIAL_INTERVAL_CUDA_S if device == "cuda" else PARTIAL_INTERVAL_CPU_S
+        )
+        self._prev_partial_words: list[str] = []  # last partial run (agreement)
+        # words already shown in this caption: FROZEN and append-only. We
+        # re-transcribe the whole buffer each tick, so a "committed" word's text
+        # could otherwise change between runs (flicker); keeping the actual words
+        # (not just a count) guarantees shown text is never rewritten.
+        self._committed_words: list[str] = []
+        self._last_partial = 0.0  # wall clock of the last partial encode
         # PCM16 = 2 B/sample; every cut is a multiple of _frame_bytes, so it is
         # always sample-aligned
         self._frame_bytes = int(sample_rate * FRAME_SECONDS) * 2
@@ -313,9 +333,81 @@ class _WhisperEngine:
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
         text = self._dedup(text)
+        # a final closes the caption: reset the partial-agreement state so the
+        # next caption's partials start fresh (done even on empty text)
+        self._prev_partial_words = []
+        self._committed_words = []
         if text and not self._closed:
             self._prev_tail_words = text.split()[-12:]  # context for the next segment
             self._on_final(text)
+
+    def _peek(self) -> bytes:
+        """A non-consuming snapshot of the buffer (partials, unlike _take_segment,
+        must not mutate it — only the final path cuts/overlaps)."""
+        with self._lock:
+            return bytes(self._buffer)
+
+    def _transcribe_partial(self, segment: bytes) -> None:
+        """Cheap re-transcription of the growing buffer; emit only the word
+        prefix two consecutive runs agree on (LocalAgreement-2), so the shown
+        text is append-only and never rewrites — that is what avoids flicker.
+
+        Read-only: never advances _prev_tail_words nor cuts the buffer (those
+        belong to the accurate final pass)."""
+        if self._is_silent(segment):
+            return
+        audio = (
+            self._np.frombuffer(segment, dtype=self._np.int16).astype("float32") / 32768.0
+        )
+        with _CT2_LOCK:
+            if self._closed:
+                return
+            # greedy, no fallback even on GPU: the partial must stay well within
+            # one interval; the accurate pass is the final
+            segments, _info = self._model.transcribe(
+                audio,
+                language=self._language,
+                beam_size=1,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                initial_prompt=" ".join(self._prev_tail_words) or None,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
+                vad_filter=True,
+                vad_parameters={
+                    "threshold": 0.3,
+                    "min_silence_duration_ms": 500,
+                    "speech_pad_ms": 400,
+                    "min_speech_duration_ms": 0,
+                },
+            )
+            raw = " ".join(seg.text.strip() for seg in segments).strip()
+        text = self._dedup(raw)  # read-only vs _prev_tail_words
+        if not text:
+            return
+        words = text.split()
+        # LocalAgreement-2: the stable prefix is what this run and the previous
+        # one agree on, word for word
+        agreed = 0
+        for a, b in zip(self._prev_partial_words, words, strict=False):
+            if self._norm(a) == self._norm(b):
+                agreed += 1
+            else:
+                break
+        self._prev_partial_words = words
+        stable = words[:agreed]
+        # Freeze committed words by VALUE, not by count. We re-transcribe the
+        # whole buffer each tick, so a word we already showed can come back
+        # spelled differently; committing the actual words (and only extending
+        # when this run still agrees with what is already shown) guarantees the
+        # visible text is strictly append-only — no rewrites, no flicker.
+        c = len(self._committed_words)
+        already = [self._norm(w) for w in self._committed_words]
+        if [self._norm(w) for w in stable[:c]] == already and agreed > c:
+            self._committed_words.extend(words[c:agreed])
+        committed = " ".join(self._committed_words)
+        if committed and not self._closed:
+            self._on_partial(committed)
 
     def _run(self) -> None:
         try:
@@ -343,14 +435,28 @@ class _WhisperEngine:
             return
         while not self._closed:
             segment = self._take_segment()
-            if segment is None:
-                time.sleep(0.1)
+            if segment is not None:
+                # FINAL: a cut is due (pause or hard cap) — the accurate pass
+                if not self._is_silent(segment):
+                    try:
+                        self._transcribe(segment)
+                    except Exception:
+                        if not self._closed:
+                            logger.warning("Trascrizione Faster-Whisper fallita")
+                            self._on_error(t("local.whisper_failed"))
                 continue
-            if self._is_silent(segment):
-                continue  # nothing to transcribe (also avoids hallucinated text)
-            try:
-                self._transcribe(segment)
-            except Exception:
-                if not self._closed:
-                    logger.warning("Trascrizione Faster-Whisper fallita")
-                    self._on_error(t("local.whisper_failed"))
+            # no cut yet: emit a streaming PARTIAL of the growing buffer at the
+            # configured cadence so words appear ~1 s after being spoken instead
+            # of waiting for the whole segment
+            now = time.monotonic()
+            if (
+                len(self._buffer) >= self._min_segment_bytes
+                and now - self._last_partial >= self._partial_interval
+            ):
+                self._last_partial = now
+                try:
+                    self._transcribe_partial(self._peek())
+                except Exception:
+                    logger.debug("Parziale Faster-Whisper fallito")
+            else:
+                time.sleep(0.05)

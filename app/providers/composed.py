@@ -51,6 +51,10 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         # recognized text goes on air as-is (e.g. Italian speech -> Italian
         # subtitles). Decided in connect() from the configured languages.
         self._passthrough = False
+        # streaming speech providers emit partials at ~1 Hz; the committed
+        # prefix is often unchanged between ticks. Skip identical partials so a
+        # translator (MarianMT CPU / DeepL cost) is not re-run for nothing.
+        self._last_partial_src = ""
         speech.on_partial_text(self._on_source_partial)
         speech.on_final_text(self._on_source_final)
         speech.on_error(self._emit_error)
@@ -99,6 +103,9 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
                 coro.close()
 
     def _on_source_partial(self, text: str) -> None:
+        if text == self._last_partial_src:  # unchanged committed prefix: skip
+            return
+        self._last_partial_src = text
         if self._passthrough:
             if not self._closed and text:
                 self._emit_partial(text)  # emitters are thread-safe downstream
@@ -108,6 +115,7 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         self._schedule(self._translate_partial(text, seq))
 
     def _on_source_final(self, text: str) -> None:
+        self._last_partial_src = ""  # next caption's partials start fresh
         if self._passthrough:
             if not self._closed and text:
                 self._emit_final(text)

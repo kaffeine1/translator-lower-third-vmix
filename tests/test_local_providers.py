@@ -535,9 +535,9 @@ def test_take_segment_hard_cap_cuts_at_quietest_frame():
     # unbroken speech with a single 30ms dip at 5.5s: the hard cap must cut
     # there (the closest thing to a pause), not mid-word at the cap itself
     engine = _engine()
-    audio = bytearray(_pcm(7.0, 8000))
+    audio = bytearray(_pcm(7.0, 8000))  # beyond the 6 s hard cap
     dip = _pcm(0.03, 100)
-    start = len(_pcm(5.5, 8000))
+    start = len(_pcm(5.5, 8000))  # a quiet frame within the last second before the cap
     audio[start : start + len(dip)] = dip
     engine.push(bytes(audio))
     segment = engine._take_segment()
@@ -771,3 +771,113 @@ def test_transcriptions_are_serialized_across_engines():
     for th in threads:
         th.join(timeout=3)
     assert concurrency["max"] == 1  # never two encodes at once
+
+
+# ---------------------------------------------------------------- streaming partials
+
+
+class _ScriptedModel:
+    """transcribe() returns the next scripted text each call (partials grow)."""
+
+    def __init__(self, texts):
+        self._it = iter(texts)
+
+    def transcribe(self, audio, **kwargs):
+        seg = type("Seg", (), {"text": next(self._it)})()
+        return [seg], None
+
+
+def test_partial_commits_only_agreed_prefix_and_is_append_only():
+    # LocalAgreement-2: emit only the word prefix two consecutive runs agree on;
+    # the shown text is append-only (never rewrites a shown word) -> no flicker
+    engine = _engine(device="cpu")
+    engine._model = _ScriptedModel(
+        [
+            "il nostro sistema",  # run 1: no previous -> commit nothing
+            "il nostro sistema cattura l",  # run 2: agrees "il nostro sistema" (+ volatile tail)
+            "il nostro sistema cattura l audio",  # run 3: agrees "...cattura l"
+        ]
+    )
+    emitted: list[str] = []
+    engine._on_partial = emitted.append
+
+    engine._transcribe_partial(_pcm(1.0, 8000))
+    engine._transcribe_partial(_pcm(2.0, 8000))
+    engine._transcribe_partial(_pcm(3.0, 8000))
+
+    assert emitted == ["il nostro sistema", "il nostro sistema cattura l"]
+    # append-only: each emit extends the previous
+    assert emitted[1].startswith(emitted[0])
+
+
+def test_partial_never_rewrites_a_shown_word():
+    # Re-transcribing the whole buffer can bring an already-shown word back
+    # spelled differently. Committed words are frozen by VALUE, so the revised
+    # spelling must never reach the screen (that would be flicker).
+    engine = _engine(device="cpu")
+    engine._model = _ScriptedModel(
+        [
+            "il nostro sistema",  # run 1: nothing committed yet
+            "il nostro sistema cattura",  # run 2: commits "il nostro sistema"
+            "il nostro sistemi cattura audio",  # run 3: "sistema" -> "sistemi"
+        ]
+    )
+    emitted: list[str] = []
+    engine._on_partial = emitted.append
+
+    engine._transcribe_partial(_pcm(1.0, 8000))
+    engine._transcribe_partial(_pcm(2.0, 8000))
+    engine._transcribe_partial(_pcm(3.0, 8000))
+
+    # the revised spelling is refused; the shown text stays frozen
+    assert all("sistemi" not in e for e in emitted)
+    assert emitted == ["il nostro sistema", "il nostro sistema"]
+
+
+def test_final_resets_partial_state():
+    engine = _engine(device="cpu")
+    engine._prev_partial_words = ["a", "b", "c"]
+    engine._committed_words = ["a", "b", "c"]
+    engine._model = _ScriptedModel(["frase finale"])
+    engine._transcribe(_pcm(1.0, 8000))
+    assert engine._prev_partial_words == []
+    assert engine._committed_words == []
+
+
+def test_composed_skips_identical_source_partials():
+    from app.providers.composed import ComposedRealtimeProvider
+
+    translated: list[str] = []
+
+    class CountingTranslator:
+        calls = 0
+
+        async def connect(self, config) -> None: ...
+        async def close(self) -> None: ...
+
+        async def translate(self, text: str) -> str:
+            type(self).calls += 1
+            return text.upper()
+
+    async def run():
+        engines: list[FakeWhisperEngine] = []
+
+        def factory(**opts):
+            e = FakeWhisperEngine(**opts)
+            engines.append(e)
+            return e
+
+        speech = FasterWhisperSpeechProvider(engine_factory=factory)
+        provider = ComposedRealtimeProvider(speech, CountingTranslator())
+        provider.on_partial_text(translated.append)
+        await provider.connect(ProviderConfig(source_language="it", target_language="en"))
+        on_partial = engines[0].opts["on_partial"]
+        on_partial("il nostro")
+        on_partial("il nostro")  # identical -> skipped, no re-translate
+        on_partial("il nostro sistema")
+        await asyncio.sleep(0.1)
+        await provider.close()
+        return CountingTranslator.calls
+
+    calls = asyncio.run(run())
+    assert calls == 2  # the duplicate did not trigger a translation

@@ -320,6 +320,12 @@ Dettagli sulle credenziali:
 > conferma e riepilogo dello spazio liberato). Potrai riscaricarli in qualsiasi
 > momento; non farlo mentre una traduzione locale è in corso.
 >
+> ⏱️ **Latenza e scelta del modello**: il riconoscimento locale mostra il testo
+> **man mano che si parla** (parziali in streaming). Per una latenza bassa usa
+> **`small`** o **`medium`**; **`large-v3`** è il più accurato ma in tempo reale
+> richiede una GPU potente (su una GPU media, come una GTX 1660, va usato solo se
+> puoi accettare un po' di ritardo, oppure per file non dal vivo).
+
 > 🎮 **GPU NVIDIA**: se imposti **Dispositivo = «GPU (CUDA)»**, il pulsante
 > scarica un **pacchetto componenti diverso e più grande** (~1,2 GB), che
 > include le librerie CUDA necessarie — così non devi installare CUDA a parte.
