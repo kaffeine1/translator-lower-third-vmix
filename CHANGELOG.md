@@ -5,7 +5,7 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [0.3.1] — 2026-07-08
 
 ### Aggiunto
 
