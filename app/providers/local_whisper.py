@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable
 
 from app.i18n import t
+from app.providers._stabilize import PartialStabilizer
 from app.providers.base import ProviderConfig, ProviderError, SpeechProvider
 
 logger = logging.getLogger("app.providers.local_whisper")
@@ -164,12 +165,11 @@ class _WhisperEngine:
         self._partial_interval = (
             PARTIAL_INTERVAL_CUDA_S if device == "cuda" else PARTIAL_INTERVAL_CPU_S
         )
-        self._prev_partial_words: list[str] = []  # last partial run (agreement)
-        # words already shown in this caption: FROZEN and append-only. We
-        # re-transcribe the whole buffer each tick, so a "committed" word's text
-        # could otherwise change between runs (flicker); keeping the actual words
-        # (not just a count) guarantees shown text is never rewritten.
-        self._committed_words: list[str] = []
+        # append-only stabilization of the streaming partials (shared with the
+        # cloud STT providers): re-transcribing the whole buffer each tick can
+        # respell an already-shown word, and this freezes shown words by value
+        # so the caption never rewrites (no flicker). See app/providers/_stabilize.py.
+        self._stabilizer = PartialStabilizer()
         self._last_partial = 0.0  # wall clock of the last partial encode
         # PCM16 = 2 B/sample; every cut is a multiple of _frame_bytes, so it is
         # always sample-aligned
@@ -335,8 +335,7 @@ class _WhisperEngine:
         text = self._dedup(text)
         # a final closes the caption: reset the partial-agreement state so the
         # next caption's partials start fresh (done even on empty text)
-        self._prev_partial_words = []
-        self._committed_words = []
+        self._stabilizer.reset()
         if text and not self._closed:
             self._prev_tail_words = text.split()[-12:]  # context for the next segment
             self._on_final(text)
@@ -385,27 +384,9 @@ class _WhisperEngine:
         text = self._dedup(raw)  # read-only vs _prev_tail_words
         if not text:
             return
-        words = text.split()
-        # LocalAgreement-2: the stable prefix is what this run and the previous
-        # one agree on, word for word
-        agreed = 0
-        for a, b in zip(self._prev_partial_words, words, strict=False):
-            if self._norm(a) == self._norm(b):
-                agreed += 1
-            else:
-                break
-        self._prev_partial_words = words
-        stable = words[:agreed]
-        # Freeze committed words by VALUE, not by count. We re-transcribe the
-        # whole buffer each tick, so a word we already showed can come back
-        # spelled differently; committing the actual words (and only extending
-        # when this run still agrees with what is already shown) guarantees the
-        # visible text is strictly append-only — no rewrites, no flicker.
-        c = len(self._committed_words)
-        already = [self._norm(w) for w in self._committed_words]
-        if [self._norm(w) for w in stable[:c]] == already and agreed > c:
-            self._committed_words.extend(words[c:agreed])
-        committed = " ".join(self._committed_words)
+        # LocalAgreement-2 with words frozen by value: emit only the stable,
+        # append-only prefix so a re-spelled word never rewrites the caption.
+        committed = self._stabilizer.feed(text)
         if committed and not self._closed:
             self._on_partial(committed)
 

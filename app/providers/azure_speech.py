@@ -19,6 +19,7 @@ from collections.abc import Callable
 
 from app.config.secrets import SecretStore
 from app.i18n import t
+from app.providers._stabilize import stabilized_callbacks
 from app.providers.base import ProviderConfig, ProviderError, SpeechProvider
 
 logger = logging.getLogger("app.providers.azure")
@@ -74,13 +75,16 @@ class AzureSpeechProvider(SpeechProvider):
             region = self._secret_store.get_api_key("azure-region")
         if not region:
             raise AzureSpeechError(t("azure.no_region"))
+        # Azure "recognizing" hypotheses are volatile (revised continuously);
+        # stabilize them append-only so the caption never rewrites a shown word.
+        on_partial, on_final = stabilized_callbacks(self._emit_partial, self._emit_final)
         self._engine = self._engine_factory(
             key=key,
             region=region,
             language=_lang(config.source_language),
             sample_rate=config.sample_rate,
-            on_partial=self._emit_partial,
-            on_final=self._emit_final,
+            on_partial=on_partial,
+            on_final=on_final,
             on_error=self._emit_error,
         )
         self._engine.start()

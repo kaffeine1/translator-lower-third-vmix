@@ -21,6 +21,7 @@ from collections.abc import Callable
 
 from app.config.secrets import SecretStore
 from app.i18n import t
+from app.providers._stabilize import stabilized_callbacks
 from app.providers.base import ProviderConfig, ProviderError, SpeechProvider
 
 logger = logging.getLogger("app.providers.google")
@@ -72,12 +73,15 @@ class GoogleSpeechProvider(SpeechProvider):
         )
         if not credentials:
             raise GoogleSpeechError(t("google.no_credentials"))
+        # Google interim results are volatile (revised between ticks); stabilize
+        # them append-only so the caption never rewrites a shown word (flicker).
+        on_partial, on_final = stabilized_callbacks(self._emit_partial, self._emit_final)
         self._engine = self._engine_factory(
             credentials=credentials,
             language=_lang(config.source_language),
             sample_rate=config.sample_rate,
-            on_partial=self._emit_partial,
-            on_final=self._emit_final,
+            on_partial=on_partial,
+            on_final=on_final,
             on_error=self._emit_error,
         )
         self._engine.start()

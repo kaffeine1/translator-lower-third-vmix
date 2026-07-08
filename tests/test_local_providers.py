@@ -836,12 +836,13 @@ def test_partial_never_rewrites_a_shown_word():
 
 def test_final_resets_partial_state():
     engine = _engine(device="cpu")
-    engine._prev_partial_words = ["a", "b", "c"]
-    engine._committed_words = ["a", "b", "c"]
+    engine._stabilizer.feed("a b c")
+    engine._stabilizer.feed("a b c")  # commit some words
+    assert engine._stabilizer._committed  # sanity: not empty before the final
     engine._model = _ScriptedModel(["frase finale"])
     engine._transcribe(_pcm(1.0, 8000))
-    assert engine._prev_partial_words == []
-    assert engine._committed_words == []
+    assert engine._stabilizer._prev == []
+    assert engine._stabilizer._committed == []
 
 
 def test_composed_skips_identical_source_partials():

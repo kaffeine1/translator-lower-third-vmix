@@ -65,6 +65,16 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
   sfarfallio), poi "fissa" la frase alla pausa. Su prova: primo testo da ~8,7 s
   a ~3,4 s su CPU (`base`), atteso ~1,5-2 s su GPU. Per la bassa latenza usare
   **`small` o `medium`**; `large-v3` in tempo reale richiede una GPU potente.
+- **Niente sfarfallio dei sottotitoli anche con i provider cloud (Google e
+  Azure).** I loro risultati "interim/recognizing" sono provvisori: Google e
+  Azure riscrivono le parole man mano che ascoltano, e prima quel testo instabile
+  arrivava tale e quale al sottotitolo (le parole già a schermo cambiavano). Ora
+  la stessa stabilizzazione append-only del riconoscimento locale è condivisa
+  anche da Google e Azure: si mostra solo il prefisso di parole ormai stabile e
+  una parola già mostrata non viene più riscritta. OpenAI Realtime era già a
+  posto (invia testo append-only). La traduzione automatica (es→it) resta esclusa
+  di proposito: tradurre una frase più lunga può riordinare le parole, quindi
+  congelarle sarebbe sbagliato.
 - **Riconoscimento locale: molte meno parole perse (parte 2).** In parlato
   continuo (video reali) i confini dei segmenti spezzavano le parole e Whisper
   finiva per inventare o perdere intere frasi. Ora i segmenti si **sovrappongono**

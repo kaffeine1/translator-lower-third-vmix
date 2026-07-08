@@ -84,7 +84,11 @@ def test_azure_connect_builds_engine_and_emits():
         await provider.connect(ProviderConfig(source_language="es"))
         engine = engines[0]
         await provider.send_audio(b"\x01\x02")
+        # Azure "recognizing" hypotheses are volatile; the provider stabilizes
+        # them append-only, so a single interim commits nothing yet.
         engine.emit_partial("Hola")
+        engine.emit_partial("Hola a")
+        engine.emit_partial("Hola a todos")
         engine.emit_final("Hola a todos")
         await provider.close()
         return engine, partials, finals
@@ -94,7 +98,8 @@ def test_azure_connect_builds_engine_and_emits():
     assert engine.opts["language"] == "es-ES"
     assert engine.opts["region"] == "westeurope"
     assert engine.pushed == [b"\x01\x02"]
-    assert partials == ["Hola"]
+    # append-only: each partial extends the previous, never rewrites
+    assert partials == ["Hola", "Hola a"]
     assert finals == ["Hola a todos"]
 
 
@@ -180,6 +185,87 @@ def test_google_real_engine_missing_sdk_is_readable():
         assert "google-cloud-speech" in str(excinfo.value)
 
     asyncio.run(run())
+
+
+# ------------------------------------------------- interim stabilization (anti-flicker)
+
+
+def _emitting_google_provider():
+    engines: list[FakeEngine] = []
+
+    def factory(**opts):
+        engine = FakeEngine(**opts)
+        engines.append(engine)
+        return engine
+
+    store = InMemorySecretStore()
+    store.set_api_key("google", "/creds.json")
+    provider = GoogleSpeechProvider(store, engine_factory=factory)
+    return provider, engines
+
+
+def test_google_interim_results_are_stabilized_append_only():
+    async def run():
+        provider, engines = _emitting_google_provider()
+        partials, finals = [], []
+        provider.on_partial_text(partials.append)
+        provider.on_final_text(finals.append)
+        await provider.connect(ProviderConfig(source_language="es"))
+        engine = engines[0]
+        # Google revises interim transcripts word by word between ticks
+        engine.emit_partial("el")
+        engine.emit_partial("el sistema")  # commit "el"
+        engine.emit_partial("el sistema captura")  # commit "el sistema"
+        engine.emit_final("el sistema captura audio")
+        await provider.close()
+        return partials, finals
+
+    partials, finals = asyncio.run(run())
+    assert partials == ["el", "el sistema"]  # append-only prefix, no flicker
+    for a, b in zip(partials, partials[1:], strict=False):
+        assert b.startswith(a)
+    assert finals == ["el sistema captura audio"]
+
+
+def test_google_revised_interim_word_is_not_rewritten():
+    # an already-shown word that Google re-spells must not change on screen
+    async def run():
+        provider, engines = _emitting_google_provider()
+        partials = []
+        provider.on_partial_text(partials.append)
+        await provider.connect(ProviderConfig(source_language="es"))
+        engine = engines[0]
+        engine.emit_partial("buenos dias")
+        engine.emit_partial("buenos dias a")  # commit "buenos dias"
+        engine.emit_partial("buenas dias a todos")  # "buenos" -> "buenas"
+        await provider.close()
+        return partials
+
+    partials = asyncio.run(run())
+    assert all("buenas" not in p for p in partials)
+    assert partials == ["buenos dias"]
+
+
+def test_final_resets_interim_stabilization():
+    # after a final the next caption's interim stream starts fresh
+    async def run():
+        provider, engines = _emitting_google_provider()
+        partials, finals = [], []
+        provider.on_partial_text(partials.append)
+        provider.on_final_text(finals.append)
+        await provider.connect(ProviderConfig(source_language="es"))
+        engine = engines[0]
+        engine.emit_partial("uno")
+        engine.emit_partial("uno dos")  # commit "uno"
+        engine.emit_final("uno dos tres")
+        engine.emit_partial("cuatro")  # fresh caption: nothing committed yet
+        engine.emit_partial("cuatro cinco")  # commit "cuatro"
+        await provider.close()
+        return partials, finals
+
+    partials, finals = asyncio.run(run())
+    assert partials == ["uno", "cuatro"]
+    assert finals == ["uno dos tres"]
 
 
 # ---------------------------------------------------------------- composed cloud
