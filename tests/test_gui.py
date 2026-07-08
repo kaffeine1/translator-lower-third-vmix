@@ -441,6 +441,8 @@ def test_settings_dialog_switching_provider_rebuilds_credentials(qapp):
 
 
 def test_credential_help_label(qapp):
+    from PySide6.QtGui import QPalette
+
     from app.gui.widgets import credential_help_label
     from app.providers.registry import (
         _CRED_AZURE_REGION,
@@ -453,6 +455,12 @@ def test_credential_help_label(qapp):
     assert "platform.openai.com" in lbl.text()
     assert "<a href" in lbl.text().lower()
     assert lbl.openExternalLinks() is True  # click opens the browser, no wiring
+    # readable in dark mode: muted via the placeholder-text role, not a dark
+    # border tone
+    pal = lbl.palette()
+    assert pal.color(QPalette.ColorRole.WindowText) == pal.color(
+        QPalette.ColorRole.PlaceholderText
+    )
     # a credential with an instruction but no link: shown, but no anchor
     reg = credential_help_label(_CRED_AZURE_REGION)
     assert reg is not None

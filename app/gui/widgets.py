@@ -7,6 +7,7 @@ from __future__ import annotations
 from enum import Enum
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout
 
 from app.i18n import t
@@ -33,8 +34,20 @@ def credential_help_label(cred) -> QLabel | None:
     label.setTextFormat(Qt.TextFormat.RichText)
     label.setOpenExternalLinks(True)
     label.setWordWrap(True)
-    # muted, theme-aware: reads as secondary help text
-    label.setStyleSheet("color: palette(mid);")
+    # muted but READABLE in both light and dark themes: use the palette's
+    # PlaceholderText role (the same secondary-text grey as field placeholders) —
+    # NOT a fixed grey or the Mid role, which is a border/shadow tone too dark to
+    # read on a dark background. The link keeps its own (Link) colour.
+    palette = label.palette()
+    palette.setColor(
+        QPalette.ColorRole.WindowText,
+        palette.color(QPalette.ColorRole.PlaceholderText),
+    )
+    label.setPalette(palette)
+    font = label.font()
+    if font.pointSize() > 0:
+        font.setPointSize(font.pointSize() - 1)  # secondary text: slightly smaller
+    label.setFont(font)
     return label
 
 

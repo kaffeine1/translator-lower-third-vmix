@@ -13,7 +13,8 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
   cloud, sotto ogni campo credenziale compare una riga con una **spiegazione
   breve** e un **link cliccabile** che apre la pagina giusta della console del
   fornitore (OpenAI, Google Cloud, Azure) direttamente nel browser. Vale sia
-  nelle Impostazioni sia nella procedura guidata iniziale.
+  nelle Impostazioni sia nella procedura guidata iniziale, ed è leggibile sia in
+  tema chiaro sia in **modalità scura** di Windows.
 - **Traduzione nativa Google e Azure (un solo fornitore).** Le pipeline cloud ora
   sono **«Google Speech → Google Translate»** e **«Azure Speech → Azure
   Translator»**: basta un unico account/chiave per fornitore. Google Translate usa
