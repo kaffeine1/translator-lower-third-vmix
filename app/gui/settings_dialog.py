@@ -83,6 +83,7 @@ logger = logging.getLogger("app.gui")
 class SettingsDialog(QDialog):
     # worker-thread -> GUI marshalling for the local-runtime downloads
     _runtime_progress = Signal(int, int)  # done bytes, total bytes (0 = unknown)
+    _models_progress = Signal(int, int)  # model download: done bytes, total bytes
     _worker_status = Signal(str)
     _worker_done = Signal(bool, str)  # ok, operator message
 
@@ -212,6 +213,7 @@ class SettingsDialog(QDialog):
         self.btn_download_models.clicked.connect(self._on_download_models)
         self.btn_remove_models.clicked.connect(self._on_remove_models)
         self._runtime_progress.connect(self._on_runtime_progress)
+        self._models_progress.connect(self._on_models_progress)
         self._worker_status.connect(self.runtime_status_label.setText)
         self._worker_done.connect(self._on_worker_done)
         # changing the local model or the languages must be reflected in the
@@ -541,7 +543,11 @@ class SettingsDialog(QDialog):
         def worker() -> None:
             try:
                 local_runtime.download_models(
-                    local_model, source, target, status=self._worker_status.emit
+                    local_model,
+                    source,
+                    target,
+                    status=self._worker_status.emit,
+                    progress=lambda done, total: self._models_progress.emit(done, total),
                 )
             except local_runtime.LocalRuntimeError as exc:
                 self._worker_done.emit(False, str(exc))
@@ -602,6 +608,13 @@ class SettingsDialog(QDialog):
             )
         if total and done >= total:
             self._worker_status.emit(t("settings.runtime_extracting"))
+
+    def _on_models_progress(self, done: int, total: int) -> None:
+        # advancing bar for the model download (like the component download); the
+        # status label keeps showing which model, set by the status callback
+        if total > 0:
+            self.runtime_progress.setRange(0, max(1, total // 1_000_000))
+            self.runtime_progress.setValue(done // 1_000_000)
 
     def _on_worker_done(self, ok: bool, message: str) -> None:
         self.runtime_progress.setVisible(False)

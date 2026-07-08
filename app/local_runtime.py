@@ -23,6 +23,7 @@ import logging
 import os
 import shutil
 import sys
+import threading
 import time
 import zipfile
 from collections.abc import Callable
@@ -347,42 +348,46 @@ def remove_downloaded_models() -> tuple[int, list[str]]:
     return freed, failed
 
 
-def _progress_tqdm(status: StatusCallback | None, repo: str):
-    """A tqdm subclass for snapshot_download that reports cumulative MB.
+def _progress_tqdm(progress: ProgressCallback | None, repo: str):
+    """A tqdm subclass for snapshot_download that reports (done, total) BYTES.
 
     Large models (large-v3 is ~3 GB) with only a busy indicator look frozen and
-    operators give up: routing hf's byte updates into the status callback shows
-    real movement. Console output is disabled (the frozen app has no stderr).
+    operators give up. This sums the byte totals of the files actually being
+    downloaded (cached files are skipped, so it also works when resuming) and the
+    bytes received, so the GUI can show a real advancing progress bar — the same
+    as the component download. Console output is disabled (no stderr when frozen).
     """
-    import time
-
     from huggingface_hub.utils import tqdm as base_tqdm
 
-    state = {"bytes": 0, "last": 0.0}
+    state = {"done": 0, "total": 0, "last": 0.0}
+    lock = threading.Lock()
 
-    class _StatusTqdm(base_tqdm):
+    class _ProgressTqdm(base_tqdm):
         def __init__(self, *args, **kwargs) -> None:
             # captured before init: a disabled tqdm skips setting self.unit
             self._reports_bytes = kwargs.get("unit") == "B"
+            total = int(kwargs.get("total") or 0)
             kwargs["disable"] = True  # no console writing, we only count bytes
             super().__init__(*args, **kwargs)
+            if self._reports_bytes and total:
+                with lock:
+                    state["total"] += total  # this file is (re)downloaded, not cached
 
         def update(self, n=1):
-            if status is not None and n and self._reports_bytes:
-                state["bytes"] += int(n)
-                now = time.monotonic()
-                if now - state["last"] >= _MODEL_PROGRESS_EVERY_S:
-                    state["last"] = now
-                    status(
-                        t(
-                            "runtime.downloading_model_mb",
-                            name=repo,
-                            mb=state["bytes"] // 1_000_000,
-                        )
-                    )
+            if progress is not None and n and self._reports_bytes:
+                emit = False
+                with lock:
+                    state["done"] += int(n)
+                    now = time.monotonic()
+                    if now - state["last"] >= _MODEL_PROGRESS_EVERY_S:
+                        state["last"] = now
+                        emit = True
+                        done, total = state["done"], state["total"]
+                if emit:  # call outside the lock: the callback may hop threads
+                    progress(done, total)
             return super().update(n)
 
-    return _StatusTqdm
+    return _ProgressTqdm
 
 
 def whisper_repo(model: str) -> str:
@@ -443,12 +448,15 @@ def download_models(
     target_language: str,
     status: StatusCallback | None = None,
     downloader=None,
+    progress: ProgressCallback | None = None,
 ) -> None:
     """Pre-download the models used by the local pipeline into the HF cache.
 
     Makes the first START instant instead of stalling on a hundreds-of-MB
     download. With source == target (captioning-only) the translation model is
-    skipped. Requires the runtime (or a dev env) to be importable.
+    skipped. Requires the runtime (or a dev env) to be importable. ``status``
+    receives which model is being fetched; ``progress`` receives (done, total)
+    bytes for a determinate progress bar (like the component download).
     """
     if downloader is None:
         try:
@@ -463,7 +471,7 @@ def download_models(
 
         def downloader(repo: str) -> None:
             _download_repo_with_retries(
-                lambda r: snapshot_download(r, tqdm_class=_progress_tqdm(status, r)),
+                lambda r: snapshot_download(r, tqdm_class=_progress_tqdm(progress, r)),
                 repo,
                 status,
             )

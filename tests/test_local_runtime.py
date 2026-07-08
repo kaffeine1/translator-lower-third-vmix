@@ -268,24 +268,41 @@ def test_models_cached_uses_checker_over_all_repos():
     assert models_cached("small", "es", "it", checker=lambda r: "whisper" in r) is False
 
 
-def test_progress_tqdm_reports_cumulative_megabytes():
-    # large models with only a busy bar look frozen: byte updates must reach
-    # the status callback as cumulative MB
+def test_progress_tqdm_reports_done_and_total_bytes():
+    # a determinate bar needs (done, total): the file total goes into `total`,
+    # the received bytes into `done`
     from app.local_runtime import _progress_tqdm
 
-    seen: list[str] = []
-    cls = _progress_tqdm(seen.append, "Systran/faster-whisper-large-v3")
-    bar = cls(total=100, unit="B")
+    seen: list[tuple[int, int]] = []
+    cls = _progress_tqdm(lambda d, t: seen.append((d, t)), "Systran/faster-whisper-large-v3")
+    bar = cls(total=100_000_000, unit="B")  # a 100 MB file
     bar.update(7_000_000)
-    assert seen and "large-v3" in seen[-1] and "7 MB" in seen[-1]
+    assert seen and seen[-1] == (7_000_000, 100_000_000)
     bar.close()
+
+
+def test_progress_tqdm_sums_totals_across_files(monkeypatch):
+    # a repo has several files: total is their sum, done accumulates across them,
+    # so the bar reflects the WHOLE repo (and only files actually downloaded)
+    import app.local_runtime as lr
+
+    monkeypatch.setattr(lr, "_MODEL_PROGRESS_EVERY_S", 0)  # emit on every update
+    seen: list[tuple[int, int]] = []
+    cls = lr._progress_tqdm(lambda d, t: seen.append((d, t)), "repo")
+    big = cls(total=100_000_000, unit="B")
+    small = cls(total=20_000_000, unit="B")
+    big.update(50_000_000)
+    small.update(20_000_000)
+    assert seen[-1] == (70_000_000, 120_000_000)
+    big.close()
+    small.close()
 
 
 def test_progress_tqdm_ignores_non_byte_bars():
     from app.local_runtime import _progress_tqdm
 
-    seen: list[str] = []
-    cls = _progress_tqdm(seen.append, "repo")
+    seen: list[tuple[int, int]] = []
+    cls = _progress_tqdm(lambda d, t: seen.append((d, t)), "repo")
     bar = cls(total=10, unit="it")  # file-count bar, not bytes
     bar.update(3)
     assert seen == []

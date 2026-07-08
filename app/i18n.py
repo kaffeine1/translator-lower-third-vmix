@@ -111,7 +111,6 @@ CATALOGS: dict[str, dict[str, str]] = {
         "runtime.archive_corrupt": "Il pacchetto scaricato non è un archivio valido. Riprova.",
         "runtime.not_installed": "Componenti locali non installati: scaricali prima con il pulsante qui sopra.",
         "runtime.downloading_model": "Scarico il modello {name}…",
-        "runtime.downloading_model_mb": "Scarico il modello {name}… {mb} MB",
         "settings.btn_remove_models": "Libera spazio: rimuovi i modelli scaricati…",
         "settings.remove_models_title": "Rimuovi modelli scaricati",
         "settings.remove_models_confirm": "Verranno rimossi {count} modelli ({size}).\n\nPotrai riscaricarli in qualsiasi momento. Non farlo mentre una traduzione locale è in corso.\n\nProcedere?",

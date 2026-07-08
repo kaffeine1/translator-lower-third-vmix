@@ -7,6 +7,14 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ## [0.3.2] — 2026-07-08
 
+### Migliorato
+
+- **Barra di avanzamento chiara per il download dei modelli.** Come per i
+  componenti, il download dei modelli mostra ora una **barra determinata** che
+  avanza (MB scaricati sul totale) invece di un semplice indicatore "occupato";
+  l'etichetta indica quale modello si sta scaricando. Funziona anche in ripresa
+  (conteggia solo i file effettivamente da scaricare).
+
 ### Corretto
 
 - **Download dei modelli grandi più affidabile.** Scaricare i modelli più pesanti
