@@ -34,6 +34,18 @@ from app.i18n import t
 
 logger = logging.getLogger("app.local_runtime")
 
+# Configure huggingface_hub BEFORE it is ever imported (it reads these at import
+# time). Use the classic HTTP download, not Xet: the classic path writes the file
+# into the cache dir incrementally, so polling that dir shows a real advancing
+# progress bar — Xet stages large files elsewhere and materializes them only at
+# the end, so the bar would look frozen. Also silence hf's console bars (no
+# stderr when frozen) and give each request more slack than the 10 s default (the
+# retry then resumes from the partial file on a dropped connection). This module
+# is imported at startup, before any provider pulls in huggingface_hub.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
+
 # Versioned runtime packs (Python 3.14 x64). One per device: the CPU pack is
 # torch-cpu + CTranslate2 (CPU); the CUDA pack adds the NVIDIA libraries so
 # faster-whisper runs on GPU without a system CUDA install. Bump the version
@@ -348,46 +360,75 @@ def remove_downloaded_models() -> tuple[int, list[str]]:
     return freed, failed
 
 
-def _progress_tqdm(progress: ProgressCallback | None, repo: str):
-    """A tqdm subclass for snapshot_download that reports (done, total) BYTES.
+def _repo_cache_dir(repo: str) -> Path:
+    """The Hugging Face cache directory for a repo (models--org--name)."""
+    return _hf_cache_dir() / ("models--" + repo.replace("/", "--"))
 
-    Large models (large-v3 is ~3 GB) with only a busy indicator look frozen and
-    operators give up. This sums the byte totals of the files actually being
-    downloaded (cached files are skipped, so it also works when resuming) and the
-    bytes received, so the GUI can show a real advancing progress bar — the same
-    as the component download. Console output is disabled (no stderr when frozen).
+
+def _dir_size(path: Path) -> int:
+    if not path.is_dir():
+        return 0
+    total = 0
+    for f in path.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _repo_total_bytes(repo: str, model_info=None) -> int:
+    """Total download size of a repo from the Hub metadata (0 if unknown).
+
+    ``model_info`` is injectable for tests; by default it is HfApi().model_info.
     """
-    from huggingface_hub.utils import tqdm as base_tqdm
+    if model_info is None:
+        try:
+            from huggingface_hub import HfApi
+        except ImportError:
+            return 0
+        model_info = HfApi().model_info
+    try:
+        info = model_info(repo, files_metadata=True)
+        return sum(int(getattr(s, "size", 0) or 0) for s in (info.siblings or []))
+    except Exception:
+        logger.warning("Dimensione del modello %s non disponibile", repo, exc_info=True)
+        return 0
 
-    state = {"done": 0, "total": 0, "last": 0.0}
-    lock = threading.Lock()
 
-    class _ProgressTqdm(base_tqdm):
-        def __init__(self, *args, **kwargs) -> None:
-            # captured before init: a disabled tqdm skips setting self.unit
-            self._reports_bytes = kwargs.get("unit") == "B"
-            total = int(kwargs.get("total") or 0)
-            kwargs["disable"] = True  # no console writing, we only count bytes
-            super().__init__(*args, **kwargs)
-            if self._reports_bytes and total:
-                with lock:
-                    state["total"] += total  # this file is (re)downloaded, not cached
+def _download_repo_with_progress(repo, fetch, progress, total_fn=None) -> None:
+    """Run ``fetch(repo)`` while polling the repo's cache directory against its
+    total size, so the GUI can show a determinate progress bar.
 
-        def update(self, n=1):
-            if progress is not None and n and self._reports_bytes:
-                emit = False
-                with lock:
-                    state["done"] += int(n)
-                    now = time.monotonic()
-                    if now - state["last"] >= _MODEL_PROGRESS_EVERY_S:
-                        state["last"] = now
-                        emit = True
-                        done, total = state["done"], state["total"]
-                if emit:  # call outside the lock: the callback may hop threads
-                    progress(done, total)
-            return super().update(n)
+    The download backend does not report bytes through tqdm (Xet, disabled for
+    model downloads, would stage large files elsewhere; the classic path writes
+    them into the cache dir incrementally), so progress is measured by how much
+    of the repo is on disk. No polling when ``progress`` is None or the total is
+    unknown — the bar then stays a busy indicator.
+    """
+    if progress is None:
+        fetch(repo)
+        return
+    total = (total_fn or _repo_total_bytes)(repo)
+    cache = _repo_cache_dir(repo)
+    stop = threading.Event()
 
-    return _ProgressTqdm
+    def poll() -> None:
+        while not stop.wait(_MODEL_PROGRESS_EVERY_S):
+            progress(min(_dir_size(cache), total), total)
+
+    poller = threading.Thread(target=poll, name="model-progress", daemon=True)
+    if total > 0:
+        poller.start()
+    try:
+        fetch(repo)
+    finally:
+        stop.set()
+        if total > 0:
+            poller.join(timeout=2)
+    if total > 0:
+        progress(total, total)  # snap to 100% (dir size may differ slightly)
 
 
 def whisper_repo(model: str) -> str:
@@ -464,17 +505,11 @@ def download_models(
         except ImportError:
             raise LocalRuntimeError(t("runtime.not_installed")) from None
 
-        # large models (medium ~1.5 GB, large-v3 ~3 GB) over a slow/flaky link
-        # often drop mid-stream: give each request more slack than the 10 s
-        # default, and retry with resume (the HF cache keeps the partial file).
-        os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
-
+        # Xet is disabled at module import (see top of file) so the classic path
+        # writes into the cache dir incrementally and the poller can show a real
+        # progress bar; the retry resumes from the partial file on a drop.
         def downloader(repo: str) -> None:
-            _download_repo_with_retries(
-                lambda r: snapshot_download(r, tqdm_class=_progress_tqdm(progress, r)),
-                repo,
-                status,
-            )
+            _download_repo_with_retries(lambda r: snapshot_download(r), repo, status)
 
     repos = required_model_repos(local_model, source_language, target_language)
     for repo in repos:
@@ -482,7 +517,7 @@ def download_models(
             status(t("runtime.downloading_model", name=repo))
         logger.info("Download modello avviato: %s", repo)
         try:
-            downloader(repo)
+            _download_repo_with_progress(repo, downloader, progress)
         except Exception:
             # full traceback in the log (public repos, no secrets): "OSError"
             # alone proved undiagnosable in the field

@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import io
 import sys
+import time
 import zipfile
 from contextlib import contextmanager
 
@@ -268,45 +269,63 @@ def test_models_cached_uses_checker_over_all_repos():
     assert models_cached("small", "es", "it", checker=lambda r: "whisper" in r) is False
 
 
-def test_progress_tqdm_reports_done_and_total_bytes():
-    # a determinate bar needs (done, total): the file total goes into `total`,
-    # the received bytes into `done`
-    from app.local_runtime import _progress_tqdm
-
-    seen: list[tuple[int, int]] = []
-    cls = _progress_tqdm(lambda d, t: seen.append((d, t)), "Systran/faster-whisper-large-v3")
-    bar = cls(total=100_000_000, unit="B")  # a 100 MB file
-    bar.update(7_000_000)
-    assert seen and seen[-1] == (7_000_000, 100_000_000)
-    bar.close()
-
-
-def test_progress_tqdm_sums_totals_across_files(monkeypatch):
-    # a repo has several files: total is their sum, done accumulates across them,
-    # so the bar reflects the WHOLE repo (and only files actually downloaded)
+def test_repo_total_bytes_sums_sibling_sizes():
     import app.local_runtime as lr
 
-    monkeypatch.setattr(lr, "_MODEL_PROGRESS_EVERY_S", 0)  # emit on every update
+    class _Sib:
+        def __init__(self, size):
+            self.size = size
+
+    class _Info:
+        siblings = [_Sib(100), _Sib(None), _Sib(50)]  # None size ignored
+
+    total = lr._repo_total_bytes("repo", model_info=lambda repo, files_metadata: _Info())
+    assert total == 150
+
+
+def test_repo_total_bytes_returns_zero_on_error():
+    import app.local_runtime as lr
+
+    def boom(repo, files_metadata):
+        raise RuntimeError("offline")
+
+    assert lr._repo_total_bytes("repo", model_info=boom) == 0
+
+
+def test_download_repo_with_progress_polls_cache_and_snaps_to_full(monkeypatch, tmp_path):
+    import app.local_runtime as lr
+
+    monkeypatch.setattr(lr, "_MODEL_PROGRESS_EVERY_S", 0.02)  # sample often
+    cache = tmp_path / "models--Systran--faster-whisper-base"
+    monkeypatch.setattr(lr, "_repo_cache_dir", lambda repo: cache)
+
     seen: list[tuple[int, int]] = []
-    cls = lr._progress_tqdm(lambda d, t: seen.append((d, t)), "repo")
-    big = cls(total=100_000_000, unit="B")
-    small = cls(total=20_000_000, unit="B")
-    big.update(50_000_000)
-    small.update(20_000_000)
-    assert seen[-1] == (70_000_000, 120_000_000)
-    big.close()
-    small.close()
+
+    def fetch(repo):
+        cache.mkdir(parents=True)
+        (cache / "part").write_bytes(b"x" * 400)
+        time.sleep(0.1)  # let the poller take a sample of the growing dir
+        (cache / "part").write_bytes(b"x" * 900)
+        time.sleep(0.05)
+
+    lr._download_repo_with_progress(
+        "Systran/faster-whisper-base",
+        fetch,
+        progress=lambda d, t: seen.append((d, t)),
+        total_fn=lambda repo: 1000,
+    )
+    assert seen  # the poller reported at least once
+    assert all(t == 1000 and d <= 1000 for d, t in seen)  # never exceeds total
+    assert seen[-1] == (1000, 1000)  # final snap to 100%
 
 
-def test_progress_tqdm_ignores_non_byte_bars():
-    from app.local_runtime import _progress_tqdm
+def test_download_repo_with_progress_without_callback_just_fetches():
+    import app.local_runtime as lr
 
-    seen: list[tuple[int, int]] = []
-    cls = _progress_tqdm(lambda d, t: seen.append((d, t)), "repo")
-    bar = cls(total=10, unit="it")  # file-count bar, not bytes
-    bar.update(3)
-    assert seen == []
-    bar.close()
+    calls: list[str] = []
+    # progress=None -> no poller, no model_info (network) call
+    lr._download_repo_with_progress("repo", calls.append, progress=None)
+    assert calls == ["repo"]
 
 
 # ------------------------------------------------------------------ model removal
