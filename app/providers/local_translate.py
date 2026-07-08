@@ -97,8 +97,19 @@ def _make_real_translator(model_name: str) -> Callable[[str], str]:
         from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
     except ImportError:
         raise LocalTranslationError(t("local.transformers_not_installed")) from None
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    except Exception as exc:
+        # The dominant real-world cause: the OPUS-MT model for this language
+        # pair was never downloaded (captioning-only use, source==target, never
+        # needs one) and cannot be fetched now (offline). Give an actionable
+        # message pointing at the Settings downloader; the full traceback stays
+        # in the log for the rarer genuine load failures.
+        logger.warning(
+            "Caricamento modello di traduzione fallito (%s)", model_name, exc_info=True
+        )
+        raise LocalTranslationError(t("local.translation_model_missing")) from exc
     model.eval()
 
     def translate(text: str) -> str:

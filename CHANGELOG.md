@@ -38,6 +38,14 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Corretto
 
+- **Messaggio chiaro quando manca il modello di traduzione locale.** Passando da
+  una sottotitolazione senza traduzione (stessa lingua, es. IT→IT) a una **con
+  traduzione** (es. Spagnolo→Italiano), se il modello di traduzione per quella
+  coppia di lingue non era ancora stato scaricato l'app mostrava un generico
+  «Errore di traduzione». Ora indica esplicitamente di aprire **Impostazioni →
+  «Scarica ora i modelli»** (con le lingue impostate e una connessione a
+  Internet). Il messaggio specifico del provider non viene più sovrascritto da
+  quello generico.
 - **Provider locale su GPU e crash da trascrizioni sovrapposte**: su GPU la
   trascrizione poteva fallire perché cuDNN non trovava le proprie sotto-librerie
   (ora le cartelle CUDA sono aggiunte anche al PATH, non solo via
@@ -56,6 +64,17 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Migliorato
 
+- **GPU NVIDIA sfruttata meglio (più veloce, meno memoria).** Il modello vocale
+  su GPU ora usa la precisione di calcolo **`int8_float16`** invece del `float16`
+  predefinito. Sulle schede senza tensor core (es. GTX 1660) il `float16` non è
+  accelerato, mentre l'INT8 sì: il risultato è una trascrizione **più veloce** e
+  che occupa **circa metà della memoria video**, con accuratezza praticamente
+  identica. Su GPU la cadenza dei parziali è stata anche ridotta (0,7 s → 0,5 s)
+  perché la scheda è per lo più libera tra un aggiornamento e l'altro, così il
+  sottotitolo compare prima. Nota: con lo streaming in tempo reale è **normale**
+  vedere un utilizzo GPU basso — si trascrivono brevi spezzoni a raffica e la
+  scheda resta ferma tra un colpo e l'altro; il modo di sfruttarla è scegliere un
+  modello più grande (es. `medium`).
 - **Riconoscimento locale molto più reattivo (streaming).** Prima un sottotitolo
   compariva solo a segmento concluso: in parlato continuo si aspettavano ~6-8
   secondi. Ora il testo viene mostrato **man mano che si parla**: il motore

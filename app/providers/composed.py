@@ -19,6 +19,7 @@ import logging
 from app.i18n import t
 from app.providers.base import (
     ProviderConfig,
+    ProviderError,
     RealtimeTranslationProvider,
     SpeechProvider,
     TranslationProvider,
@@ -138,6 +139,13 @@ class ComposedRealtimeProvider(RealtimeTranslationProvider):
         async with self._final_lock:  # keep finals in speech order (see __init__)
             try:
                 translated = await self._translator.translate(text)
+            except ProviderError as exc:
+                # the translator already has an operator-readable, actionable
+                # message (e.g. "translation model not downloaded") — surface it
+                # instead of the generic fallback
+                logger.exception("Traduzione finale fallita")
+                self._emit_error(str(exc) or t("provider.translate_failed"))
+                return
             except Exception:
                 logger.exception("Traduzione finale fallita")
                 self._emit_error(t("provider.translate_failed"))

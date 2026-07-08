@@ -882,3 +882,108 @@ def test_composed_skips_identical_source_partials():
 
     calls = asyncio.run(run())
     assert calls == 2  # the duplicate did not trigger a translation
+
+
+# ---------------------------------------------------------------- GPU compute type
+
+
+def test_default_compute_type_is_device_aware():
+    from app.providers.local_whisper import _default_compute_type
+
+    # CUDA: int8_float16 (DP4A INT8 is fast on tensor-core-less Turing; float16
+    # is not) — CPU: unchanged library default
+    assert _default_compute_type("cuda") == "int8_float16"
+    assert _default_compute_type("cpu") == "default"
+
+
+def test_engine_passes_compute_type_to_model():
+    from app.providers.local_whisper import _WhisperEngine
+
+    captured = {}
+
+    class CaptureModel:
+        def __init__(self, name, device, compute_type):
+            captured["device"] = device
+            captured["compute_type"] = compute_type
+
+        def transcribe(self, *a, **k):  # pragma: no cover - never called here
+            return [], None
+
+    def build(device, compute_type=None):
+        engine = _WhisperEngine(
+            CaptureModel,
+            model="small",
+            device=device,
+            sample_rate=16000,
+            language="it",
+            on_partial=lambda _t: None,
+            on_final=lambda _t: None,
+            on_error=lambda _t: None,
+            compute_type=compute_type,
+        )
+        engine._closed = True  # build the model, then exit the run loop at once
+        engine._run()
+        return dict(captured)
+
+    # CUDA auto -> int8_float16
+    got = build("cuda")
+    assert got == {"device": "cuda", "compute_type": "int8_float16"}
+    # explicit override wins
+    got = build("cuda", compute_type="float16")
+    assert got["compute_type"] == "float16"
+    # CPU auto -> default (unchanged)
+    got = build("cpu")
+    assert got["compute_type"] == "default"
+
+
+# ---------------------------------------------------------------- translation model errors
+
+
+def test_make_real_translator_missing_model_is_actionable(monkeypatch):
+    transformers = pytest.importorskip("transformers")
+    pytest.importorskip("torch")
+    from app.providers import local_translate
+
+    def boom(*a, **k):
+        raise OSError("model not found locally and offline")
+
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", boom)
+    with pytest.raises(LocalTranslationError) as excinfo:
+        local_translate._make_real_translator("Helsinki-NLP/opus-mt-es-it")
+    # points the operator at the Settings model downloader
+    assert "Scarica" in str(excinfo.value)
+
+
+def test_composed_surfaces_translation_provider_error_message():
+    # a translator failure with an actionable message must reach the operator,
+    # not be replaced by the generic "translation error"
+    from app.providers.base import ProviderError
+    from app.providers.composed import ComposedRealtimeProvider
+
+    class MissingModelTranslator:
+        async def connect(self, config) -> None: ...
+        async def close(self) -> None: ...
+
+        async def translate(self, text: str) -> str:
+            raise ProviderError("Modello di traduzione non ancora scaricato. Scarica i modelli.")
+
+    async def run():
+        engines: list[FakeWhisperEngine] = []
+
+        def factory(**opts):
+            engine = FakeWhisperEngine(**opts)
+            engines.append(engine)
+            return engine
+
+        speech = FasterWhisperSpeechProvider(engine_factory=factory)
+        provider = ComposedRealtimeProvider(speech, MissingModelTranslator())
+        errors: list[str] = []
+        provider.on_error(errors.append)
+        await provider.connect(ProviderConfig(source_language="es", target_language="it"))
+        engines[0].emit_final("hola a todos")
+        await asyncio.sleep(0.1)
+        await provider.close()
+        return errors
+
+    errors = asyncio.run(run())
+    assert errors == ["Modello di traduzione non ancora scaricato. Scarica i modelli."]

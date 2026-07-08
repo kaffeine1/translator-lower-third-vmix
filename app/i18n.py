@@ -233,6 +233,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "local.translate_not_connected": "Traduttore locale non connesso",
         "local.translate_failed": "Traduzione locale non riuscita",
         "local.transformers_not_installed": "Modello di traduzione locale non installato. Installa 'transformers' e 'torch' per usare la traduzione locale.",
+        "local.translation_model_missing": "Modello di traduzione non ancora scaricato per questa coppia di lingue. Apri Impostazioni → «Scarica ora i modelli» (con la lingua sorgente e destinazione impostate) e verifica la connessione a Internet.",
         "config.load_corrupt": "La configurazione salvata era danneggiata: sono stati ripristinati i valori predefiniti. Controlla le impostazioni.",
         "secrets.read_failed": "Impossibile leggere la chiave API dal sistema ({error})",
         "secrets.save_failed": "Impossibile salvare la chiave API nel sistema ({error})",

@@ -37,8 +37,10 @@ MIN_SEGMENT_SECONDS = 1.0  # Whisper hallucinates on sub-second clips
 # cap only trades re-encode cost for accuracy.
 MAX_SEGMENT_SECONDS = 6.0
 # how often to re-transcribe the growing buffer and emit a stabilized PARTIAL
-# (streaming): felt latency is now this cadence, not the segment length
-PARTIAL_INTERVAL_CUDA_S = 0.7
+# (streaming): felt latency is now this cadence, not the segment length. On GPU
+# the re-transcription is cheap (the card is idle between ticks), so the cadence
+# is tight for a livelier caption; on CPU it must stay realtime.
+PARTIAL_INTERVAL_CUDA_S = 0.5
 PARTIAL_INTERVAL_CPU_S = 1.2
 SILENCE_WINDOW_SECONDS = 0.4  # inter-phrase pause length that triggers a cut
 FRAME_SECONDS = 0.03  # RMS frame: 480 samples / 960 bytes at 16 kHz (sample-aligned)
@@ -57,6 +59,19 @@ MAX_BUFFER_SECONDS = 30.0
 
 DEFAULT_MODEL = "small"
 DEFAULT_DEVICE = "cpu"
+
+
+def _default_compute_type(device: str) -> str:
+    """Pick the fastest safe CTranslate2 compute type for the device.
+
+    On CUDA the library default is float16, but a GTX 16xx (Turing, no tensor
+    cores) runs float16 GEMM at FP32 speed — so float16 wastes the card. int8
+    is DP4A-accelerated on Turing, so int8_float16 is faster there and uses
+    ~half the VRAM, with negligible accuracy change; CTranslate2 falls back
+    gracefully on GPUs where it is unsupported. On CPU we keep the library
+    default (unchanged, validated) path.
+    """
+    return "int8_float16" if device == "cuda" else "default"
 
 # CTranslate2 model load + inference are serialized process-wide. A rapid
 # STOP/START can leave a previous engine still finishing an encode while the new
@@ -80,10 +95,12 @@ class FasterWhisperSpeechProvider(SpeechProvider):
         model: str = DEFAULT_MODEL,
         device: str = DEFAULT_DEVICE,
         engine_factory: EngineFactory | None = None,
+        compute_type: str | None = None,
     ) -> None:
         super().__init__()
         self._model = model
         self._device = device
+        self._compute_type = compute_type  # None -> device-aware default
         self._engine_factory = engine_factory or _make_real_engine
         self._engine: object | None = None
 
@@ -91,6 +108,7 @@ class FasterWhisperSpeechProvider(SpeechProvider):
         self._engine = self._engine_factory(
             model=self._model,
             device=self._device,
+            compute_type=self._compute_type,
             sample_rate=config.sample_rate,
             language=config.source_language,
             on_partial=self._emit_partial,
@@ -148,6 +166,7 @@ class _WhisperEngine:
         on_partial: TextCb,
         on_final: TextCb,
         on_error: TextCb,
+        compute_type: str | None = None,
     ) -> None:
         import numpy as np
 
@@ -155,6 +174,7 @@ class _WhisperEngine:
         self._model_cls = whisper_model_cls
         self._model_name = model
         self._device = device
+        self._compute_type = compute_type or _default_compute_type(device)
         self._sample_rate = sample_rate
         self._language = (language or "").lower() or None
         self._on_partial = on_partial
@@ -395,7 +415,19 @@ class _WhisperEngine:
             # serialized with inference: never build a new model while another
             # engine is mid-encode (see _CT2_LOCK)
             with _CT2_LOCK:
-                self._model = self._model_cls(self._model_name, device=self._device)
+                self._model = self._model_cls(
+                    self._model_name,
+                    device=self._device,
+                    compute_type=self._compute_type,
+                )
+            # logged so the operator can confirm the GPU/precision actually in
+            # use (e.g. that int8_float16 was accepted, not silently downgraded)
+            logger.info(
+                "Faster-Whisper pronto (device=%s, compute_type=%s, model=%s)",
+                self._device,
+                self._compute_type,
+                self._model_name,
+            )
         except Exception:
             if not self._closed:
                 # full traceback: "missing cublas64_12.dll" is undiagnosable
