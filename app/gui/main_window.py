@@ -310,6 +310,15 @@ class MainWindow(QMainWindow):
         # overlay settings may have changed (monitor/font/opacity/enabled)
         self._sync_overlay_button()
         self._apply_overlay_state()
+        # the local CPU/GPU pack is chosen at startup (before faster-whisper is
+        # imported), so switching device only takes effect after a restart —
+        # tell the operator instead of silently keeping the old device
+        if old_config is not None and old_config.local_device != new_config.local_device:
+            QMessageBox.information(
+                self,
+                t("gui.settings_title"),
+                t("gui.local_device_restart"),
+            )
         self.statusBar().showMessage(t("gui.settings_saved"), 5000)
         return True
 

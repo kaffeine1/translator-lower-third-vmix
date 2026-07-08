@@ -38,6 +38,15 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Corretto
 
+- **Provider locale su GPU e crash da trascrizioni sovrapposte**: su GPU la
+  trascrizione poteva fallire perché cuDNN non trovava le proprie sotto-librerie
+  (ora le cartelle CUDA sono aggiunte anche al PATH, non solo via
+  `add_dll_directory`). Inoltre premere START/STOP in rapida sequenza lasciava
+  due trascrizioni Faster-Whisper attive insieme, corrompendo la memoria
+  (crash `0xc0000374`): ora l'uso di CTranslate2 è serializzato (una trascrizione
+  alla volta). Infine, cambiare **Dispositivo (CPU/GPU)** nelle Impostazioni
+  mostra un avviso a **riavviare l'app**, perché il componente giusto viene
+  caricato all'avvio.
 - **Finestra Impostazioni troppo stretta con scrollbar orizzontale** (evidente su
   Windows 10): un nome di dispositivo audio lungo e l'etichetta di stato dei
   modelli imponevano al contenuto una larghezza enorme (~1500 px). Ora le tendine

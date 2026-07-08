@@ -44,6 +44,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "gui.settings_title": "Impostazioni",
         "gui.settings_save_failed": "Impossibile salvare le impostazioni su disco. Controlla lo spazio disponibile e i permessi, poi riprova.",
         "gui.settings_saved": "Impostazioni salvate",
+        "gui.local_device_restart": "Hai cambiato il dispositivo dei provider locali (CPU/GPU). Chiudi e riapri Traduttore Live per applicarlo: il componente giusto viene caricato all'avvio.",
         "gui.yes": "sì",
         "gui.no": "no",
         "gui.diagnostics": "{app_name}\nVersione: {version}\n{description}\n\nAutore: {author} <{author_email}>\n\nProvider: {provider}\nChiave API salvata: {has_key}\nLingue: {source_language} → {target_language}\nvMix: {vmix_host}:{vmix_port}\n\nConfigurazione:\n{config_path}\n\nLog:\n{log_dir}",

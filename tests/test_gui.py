@@ -963,3 +963,27 @@ def test_settings_content_fits_without_wide_horizontal_scroll(qapp):
             combo.sizeAdjustPolicy()
             == QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
+
+
+def test_local_device_change_prompts_restart(qapp, tmp_path, monkeypatch):
+    # switching CPU<->GPU only takes effect after a restart (the pack is chosen
+    # at startup): the operator must be told, not left thinking it applied
+    from PySide6.QtWidgets import QMessageBox
+
+    shown = {}
+    monkeypatch.setattr(
+        QMessageBox, "information", staticmethod(lambda *a, **k: shown.setdefault("info", a[2]))
+    )
+    window = _make_window(tmp_path)
+    new_config = AppConfig()
+    new_config.local_device = "cuda"  # was cpu
+    assert window._apply_settings(new_config, {}) is True
+    assert "riavri" in shown.get("info", "").lower() or "riapri" in shown.get("info", "").lower()
+
+    # no prompt when the device did not change
+    shown.clear()
+    same = AppConfig()
+    same.local_device = "cuda"
+    window._config = new_config
+    assert window._apply_settings(same, {}) is True
+    assert "info" not in shown
