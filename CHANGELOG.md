@@ -38,6 +38,14 @@ progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ### Corretto
 
+- **Componenti locali sempre ri-scaricabili (riparazione).** Se i file dei
+  componenti locali (torch, transformers…) venivano rimossi da una pulizia disco
+  o dall'antivirus mentre il segnaposto di "installazione completata" restava,
+  l'app li credeva installati, **nascondeva il pulsante di download** e non c'era
+  modo di rimediare dall'interfaccia. Ora il pulsante è **sempre presente**: se i
+  componenti risultano installati diventa **«Ri-scarica i componenti locali
+  (riparazione)»** e forza un nuovo download. Vale sia per le Impostazioni sia
+  per il wizard.
 - **Messaggio chiaro quando manca il modello di traduzione locale.** Passando da
   una sottotitolazione senza traduzione (stessa lingua, es. IT→IT) a una **con
   traduzione** (es. Spagnolo→Italiano), se il modello di traduzione per quella

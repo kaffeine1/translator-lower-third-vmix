@@ -435,9 +435,18 @@ class SettingsDialog(QDialog):
         return False
 
     def _sync_runtime_button_label(self) -> None:
-        size_bytes = local_runtime.pack_for(self._selected_device()).size_bytes
+        device = self._selected_device()
+        size_bytes = local_runtime.pack_for(device).size_bytes
         size_text = f"{size_bytes // 1_000_000} MB" if size_bytes else "1 GB"
-        self.btn_download_runtime.setText(t("settings.btn_download_runtime", size=size_text))
+        # when a pack is already marked installed the button becomes a repair
+        # (re-download): the marker can outlive the files, and there must always
+        # be a way to fetch them again
+        key = (
+            "settings.btn_redownload_runtime"
+            if local_runtime.is_installed(device=device)
+            else "settings.btn_download_runtime"
+        )
+        self.btn_download_runtime.setText(t(key, size=size_text))
 
     def _on_device_changed(self) -> None:
         self._sync_runtime_button_label()
@@ -450,7 +459,11 @@ class SettingsDialog(QDialog):
             if available
             else t("settings.runtime_status_absent")
         )
-        self.btn_download_runtime.setVisible(not available)
+        # always offer the download/repair button (see _sync_runtime_button_label):
+        # a pack can look installed via a stale marker yet fail to import, and the
+        # operator must still be able to re-fetch it
+        self.btn_download_runtime.setVisible(True)
+        self._sync_runtime_button_label()
         self.btn_download_models.setEnabled(available)
         self.btn_remove_models.setEnabled(bool(local_runtime.downloaded_models()))
         if available:
@@ -486,10 +499,15 @@ class SettingsDialog(QDialog):
         self.runtime_progress.setRange(0, 0)  # busy until the size is known
         device = self._selected_device()
 
+        # if the pack already looks installed, this click is a repair: force a
+        # fresh download rather than short-circuiting on the (possibly stale) marker
+        force = local_runtime.is_installed(device=device)
+
         def worker() -> None:
             try:
                 local_runtime.download_and_install(
                     device=device,
+                    force=force,
                     progress=lambda done, total: self._runtime_progress.emit(done, total),
                 )
             except local_runtime.LocalRuntimeError as exc:

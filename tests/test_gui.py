@@ -786,17 +786,19 @@ def test_overlay_set_text_does_not_move_or_resize(qapp):
 
 def test_settings_dialog_has_local_runtime_controls(qapp):
     # download & setup of local components from the GUI (installer stays light)
+    import app.local_runtime as lr
+
     dialog = SettingsDialog(AppConfig(), [])
     assert dialog.runtime_status_label.text() != ""
     assert dialog.btn_download_models is not None
-    # in the dev environment the packages are importable -> download hidden,
-    # models button enabled; without them the inverse must hold
-    if dialog._local_components_available():
-        assert not dialog.btn_download_runtime.isVisibleTo(dialog)
-        assert dialog.btn_download_models.isEnabled()
-    else:
-        assert dialog.btn_download_runtime.isVisibleTo(dialog)
-        assert not dialog.btn_download_models.isEnabled()
+    # the download/repair button is ALWAYS offered: a stale ".complete" marker
+    # can outlive the files, and the operator must still be able to re-fetch them
+    assert dialog.btn_download_runtime.isVisibleTo(dialog)
+    # models can only be fetched once the components are available
+    assert dialog.btn_download_models.isEnabled() == dialog._local_components_available()
+    # a present marker turns the button into a repair (re-download)
+    installed = lr.is_installed(device=dialog._selected_device())
+    assert ("riparazione" in dialog.btn_download_runtime.text().lower()) == installed
     assert not dialog.runtime_progress.isVisibleTo(dialog)  # hidden until used
 
 

@@ -185,17 +185,24 @@ def download_and_install(
     sha256: str | None = None,
     directory: Path | None = None,
     opener=None,
+    force: bool = False,
 ) -> Path:
     """Download the runtime pack for ``device``, verify it, extract, activate it.
 
     Raises LocalRuntimeError with an operator-readable message on failure.
     Safe to re-run: a complete install short-circuits, a partial one is redone.
+    ``force`` re-downloads even when the marker is present — needed to repair a
+    pack whose files were removed (e.g. by disk cleanup or antivirus) while the
+    ``.complete`` marker survived, which otherwise looks installed but cannot
+    import.
     """
     pack = pack_for(device)
     directory = directory or runtime_dir(device)
-    if is_installed(directory):
+    if is_installed(directory) and not force:
         activate(directory, device=device)
         return directory
+    # clear the marker up front so a failed repair does not keep looking complete
+    (directory / _COMPLETE_MARKER).unlink(missing_ok=True)
     url = url or pack.url
     sha256 = pack.sha256 if sha256 is None else sha256
 

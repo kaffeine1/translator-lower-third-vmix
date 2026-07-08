@@ -87,6 +87,7 @@ CATALOGS: dict[str, dict[str, str]] = {
         "settings.runtime_status_present": "Componenti locali: installati ✓",
         "settings.runtime_status_absent": "Componenti locali: non installati",
         "settings.btn_download_runtime": "Scarica e attiva i componenti locali (~{size})",
+        "settings.btn_redownload_runtime": "Ri-scarica i componenti locali (riparazione, ~{size})",
         "settings.btn_download_models": "Scarica ora i modelli per le lingue configurate",
         "settings.runtime_downloading": "Scarico i componenti locali… {done} / {total} MB",
         "settings.runtime_extracting": "Estraggo e attivo i componenti…",

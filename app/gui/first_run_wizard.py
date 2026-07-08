@@ -164,9 +164,17 @@ class _CredentialsPage(QWizardPage):
         return False
 
     def _sync_runtime_button_label(self) -> None:
-        size_bytes = local_runtime.pack_for(self._selected_device()).size_bytes
+        device = self._selected_device()
+        size_bytes = local_runtime.pack_for(device).size_bytes
         size_text = f"{size_bytes // 1_000_000} MB" if size_bytes else "1 GB"
-        self.btn_download_runtime.setText(t("settings.btn_download_runtime", size=size_text))
+        # already installed -> the button repairs (re-downloads); see the
+        # Settings dialog for why a stale marker must never hide it
+        key = (
+            "settings.btn_redownload_runtime"
+            if local_runtime.is_installed(device=device)
+            else "settings.btn_download_runtime"
+        )
+        self.btn_download_runtime.setText(t(key, size=size_text))
 
     def _on_device_changed(self) -> None:
         self._sync_runtime_button_label()
@@ -179,7 +187,11 @@ class _CredentialsPage(QWizardPage):
             if available
             else t("settings.runtime_status_absent")
         )
-        self.btn_download_runtime.setVisible(not available)
+        # always offer the download/repair button for the local provider (a
+        # stale marker can outlive the files, leaving the pack unusable but
+        # looking installed); it is hidden for non-local providers in _rebuild
+        self.btn_download_runtime.setVisible(True)
+        self._sync_runtime_button_label()
         self.btn_download_models.setEnabled(available)
         if available:
             self._refresh_models_state()
@@ -213,11 +225,14 @@ class _CredentialsPage(QWizardPage):
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # busy until the size is known
         device = self._selected_device()
+        # repair (force) when a pack already looks installed, else fresh download
+        force = local_runtime.is_installed(device=device)
 
         def worker() -> None:
             try:
                 local_runtime.download_and_install(
                     device=device,
+                    force=force,
                     progress=lambda done, total: self._runtime_progress.emit(done, total),
                 )
             except local_runtime.LocalRuntimeError as exc:

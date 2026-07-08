@@ -68,6 +68,42 @@ def test_install_extracts_verifies_and_activates(tmp_path):
     sys.path.remove(str(target))  # cleanup for other tests
 
 
+def test_force_redownloads_over_stale_marker(tmp_path):
+    # a pack whose files were removed (disk cleanup / antivirus) while the
+    # ".complete" marker survived must be repairable: force re-downloads it
+    payload = _zip_bytes({"fake_pkg/__init__.py": "x = 1\n"})
+    sha = hashlib.sha256(payload).hexdigest()
+    target = tmp_path / "runtime"
+
+    inner = _opener_for(payload)
+    calls = {"n": 0}
+
+    def counting_opener(url):
+        calls["n"] += 1
+        return inner(url)
+
+    download_and_install(url="u", sha256=sha, directory=target, opener=counting_opener)
+    assert calls["n"] == 1 and is_installed(target)
+
+    # simulate the gutted pack: file gone, marker still present
+    (target / "fake_pkg" / "__init__.py").unlink()
+
+    # a normal re-run short-circuits on the marker (no repair, no download)
+    download_and_install(url="u", sha256=sha, directory=target, opener=counting_opener)
+    assert calls["n"] == 1
+    assert not (target / "fake_pkg" / "__init__.py").exists()
+
+    # force re-downloads and restores the files
+    download_and_install(
+        url="u", sha256=sha, directory=target, opener=counting_opener, force=True
+    )
+    assert calls["n"] == 2
+    assert (target / "fake_pkg" / "__init__.py").read_text() == "x = 1\n"
+    assert is_installed(target)
+    if str(target) in sys.path:
+        sys.path.remove(str(target))
+
+
 def test_install_reports_progress(tmp_path):
     payload = _zip_bytes({"a.py": "1"})
     calls: list[tuple[int, int]] = []
