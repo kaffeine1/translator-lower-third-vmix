@@ -124,11 +124,18 @@ def activate(directory: Path | None = None, device: str = "cpu", *, dll_registra
         logger.info("Runtime locale attivato: %s", path)
     if pack.device == "cuda" and (dll_registrar is not None or sys.platform == "win32"):
         register = dll_registrar or getattr(os, "add_dll_directory", None)
-        if register is not None:
-            for bindir in sorted((directory / "nvidia").glob("*/bin")):
-                if bindir.is_dir():
-                    _dll_dirs.append(register(str(bindir)))
-                    logger.info("CUDA DLL dir registrata: %s", bindir)
+        bindirs = [b for b in sorted((directory / "nvidia").glob("*/bin")) if b.is_dir()]
+        for bindir in bindirs:
+            if register is not None:
+                _dll_dirs.append(register(str(bindir)))
+            # also prepend to PATH: cuDNN 9's own loader resolves its secondary
+            # DLLs (cudnn_ops/cnn/…) via the plain search path and does NOT
+            # always honor add_dll_directory, so without PATH it fails to load
+            # even though the DLLs are present
+            current = os.environ.get("PATH", "")
+            if str(bindir) not in current:
+                os.environ["PATH"] = str(bindir) + os.pathsep + current
+            logger.info("CUDA DLL dir registrata: %s", bindir)
     return True
 
 

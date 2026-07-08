@@ -319,11 +319,16 @@ def test_activate_cuda_registers_nvidia_dll_dirs(tmp_path):
         (target / "nvidia" / sub / "bin").mkdir(parents=True)
     (target / ".complete").write_text("py314-cu124-1", encoding="utf-8")
 
+    import os
+
     registered: list[str] = []
     ok = activate(target, device="cuda", dll_registrar=registered.append)
     assert ok is True
     assert len(registered) == 3  # one per nvidia/*/bin
     assert all("bin" in p for p in registered)
+    # also prepended to PATH (cuDNN's own loader needs it)
+    path_entries = os.environ["PATH"].split(os.pathsep)
+    assert sum(1 for p in path_entries if "nvidia" in p and str(target) in p) == 3
     sys.path.remove(str(target))
 
 
