@@ -36,6 +36,7 @@ _OUTPUT_SENTINEL = object()
 
 TextSink = Callable[[str], None]
 ErrorSink = Callable[[str], None]
+RecoverySink = Callable[[], None]
 
 
 class TranslationPipeline:
@@ -47,12 +48,14 @@ class TranslationPipeline:
         output_publish: TextSink,
         on_error: ErrorSink | None = None,
         audio_input: AudioInput | None = None,
+        on_recovered: RecoverySink | None = None,
     ) -> None:
         self._provider = provider
         self._config = config
         self._on_subtitle = on_subtitle
         self._output_publish = output_publish
         self._on_error = on_error
+        self._on_recovered = on_recovered
         self._audio = audio_input
 
         self._formatter = SubtitleFormatter(config.subtitles, self._on_formatter_publish)
@@ -85,6 +88,10 @@ class TranslationPipeline:
         self._provider.on_partial_text(self._formatter.feed_partial)
         self._provider.on_final_text(self._formatter.feed_final)
         self._provider.on_error(self._handle_error)
+        # optional: only providers that reconnect by themselves emit it
+        register_reconnected = getattr(self._provider, "on_reconnected", None)
+        if callable(register_reconnected):
+            register_reconnected(self._handle_reconnected)
 
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
@@ -242,3 +249,8 @@ class TranslationPipeline:
         logger.warning("Errore provider: %s", message)
         if self._on_error is not None:
             self._on_error(message)
+
+    def _handle_reconnected(self) -> None:
+        logger.info("Provider di nuovo connesso: la traduzione riprende")
+        if self._on_recovered is not None:
+            self._on_recovered()

@@ -38,9 +38,13 @@ from app import local_runtime
 from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.gui.subtitle_overlay import available_monitors
-from app.gui.widgets import credential_help_label
+from app.gui.widgets import credential_help_label, disable_wheel_on_fields
 from app.i18n import available_locales, t
-from app.providers.registry import available_providers, get_provider_info
+from app.providers.registry import (
+    available_providers,
+    get_provider_info,
+    local_providers_visible,
+)
 
 LANGUAGES = [
     ("Spagnolo", "es"),
@@ -49,9 +53,6 @@ LANGUAGES = [
     ("Francese", "fr"),
     ("Portoghese", "pt"),
 ]
-
-# Populated from the provider registry: (display name, id).
-PROVIDERS = [(info.display_name, info.id) for info in available_providers()]
 
 SYSTEM_DEFAULT_DEVICE = t("settings.system_default_device")
 
@@ -75,6 +76,64 @@ def _select_by_data(combo: QComboBox, data: object) -> None:
         combo.addItem(t("settings.device_not_in_list", data=data), data)
         index = combo.count() - 1
     combo.setCurrentIndex(index if index >= 0 else 0)
+
+
+def provider_choices(current: str | None = None) -> list[tuple[str, str]]:
+    """(display name, id) for the provider selector, from the registry.
+
+    A provider hidden from the GUI (the local ones) is still listed when it is
+    the configured one, so an existing setup is shown by name and not lost."""
+    choices = [(info.display_name, info.id) for info in available_providers()]
+    info = get_provider_info(current) if current else None
+    if info is not None and all(pid != info.id for _label, pid in choices):
+        choices.append((info.display_name, info.id))
+    return choices
+
+
+# data of the "detected automatically" entry of the source-language combo
+AUTO_SOURCE = "auto"
+
+
+class SourceLanguageField:
+    """The source-language combo, aware of providers that recognize the spoken
+    language by themselves (OpenAI Realtime Translation).
+
+    For those it shows "Rilevata automaticamente dal servizio" and is locked:
+    asking the operator for a language the service ignores was misleading. The
+    operator's own choice is remembered and saved unchanged, so it is there
+    again when switching to a provider that needs it. Plain helper (not a
+    widget), shared by the Settings dialog and the first-run wizard."""
+
+    def __init__(self, combo: QComboBox) -> None:
+        self.combo = combo
+        self.manual = combo.currentData()
+
+    def load(self, language: str, provider_id: str | None) -> None:
+        _select_by_data(self.combo, language)
+        self.manual = language
+        self.sync(provider_id)
+
+    def sync(self, provider_id: str | None) -> None:
+        info = get_provider_info(provider_id) if provider_id else None
+        auto = bool(info and info.detects_source_language)
+        combo = self.combo
+        current = combo.currentData()
+        if current is not None and current != AUTO_SOURCE:
+            self.manual = current  # the operator's language, kept for later
+        auto_index = combo.findData(AUTO_SOURCE)
+        if auto:
+            if auto_index < 0:
+                combo.insertItem(0, t("settings.source_auto"), AUTO_SOURCE)
+            combo.setCurrentIndex(combo.findData(AUTO_SOURCE))
+        elif auto_index >= 0:
+            combo.removeItem(auto_index)
+            _select_by_data(combo, self.manual)
+        combo.setEnabled(not auto)
+
+    def value(self) -> str:
+        """The language to save: the operator's choice, never the auto entry."""
+        current = self.combo.currentData()
+        return self.manual if current == AUTO_SOURCE else current
 
 
 logger = logging.getLogger("app.gui")
@@ -101,6 +160,12 @@ class SettingsDialog(QDialog):
         # "already saved" placeholder on each credential field)
         self._saved_accounts = set(saved_accounts or ())
         self._cred_edits: dict[str, QLineEdit] = {}
+        self._config_provider = config.provider
+        # the local (offline) providers are hidden from the GUI unless enabled,
+        # or already the configured ones (see registry.LOCAL_PROVIDERS_VISIBLE);
+        # hidden, their group does no work at all (no component/model checks)
+        current = get_provider_info(config.provider)
+        self._show_local = local_providers_visible() or bool(current and current.local)
         self._build_ui(devices)
         self._load(config)
 
@@ -132,13 +197,14 @@ class SettingsDialog(QDialog):
         provider_box = QGroupBox(t("settings.group.provider"))
         provider_form = QFormLayout(provider_box)
         self.provider_combo = QComboBox()
-        for label, code in PROVIDERS:
+        for label, code in provider_choices(self._config_provider):
             self.provider_combo.addItem(label, code)
         self.source_combo = QComboBox()
         self.target_combo = QComboBox()
         for label, code in LANGUAGES:
             self.source_combo.addItem(label, code)
             self.target_combo.addItem(label, code)
+        self._source = SourceLanguageField(self.source_combo)
         provider_form.addRow(t("settings.label.provider"), self.provider_combo)
         provider_form.addRow(t("settings.label.source_language"), self.source_combo)
         provider_form.addRow(t("settings.label.target_language"), self.target_combo)
@@ -149,6 +215,7 @@ class SettingsDialog(QDialog):
         self._cred_form = QFormLayout(credentials_box)
         layout.addWidget(credentials_box)
         self.provider_combo.currentIndexChanged.connect(self._rebuild_credentials)
+        self.provider_combo.currentIndexChanged.connect(self._sync_source_language)
 
         audio_box = QGroupBox(t("settings.group.audio"))
         audio_form = QFormLayout(audio_box)
@@ -174,6 +241,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(vmix_box)
 
         local_box = QGroupBox(t("settings.group.local"))
+        self.local_box = local_box
         local_form = QFormLayout(local_box)
         self.local_model_combo = QComboBox()
         for size in LOCAL_MODELS:
@@ -226,6 +294,7 @@ class SettingsDialog(QDialog):
         self.local_device_combo.currentIndexChanged.connect(self._on_device_changed)
         self._sync_runtime_button_label()
         self._refresh_runtime_state()
+        local_box.setVisible(self._show_local)
         layout.addWidget(local_box)
 
         subtitles_box = QGroupBox(t("settings.group.subtitles"))
@@ -291,6 +360,8 @@ class SettingsDialog(QDialog):
                 QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
             combo.setMinimumContentsLength(16)
+        # scrolling the page must never change a value under the pointer
+        disable_wheel_on_fields(content)
 
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
@@ -352,13 +423,16 @@ class SettingsDialog(QDialog):
             if help_label is not None:
                 self._cred_form.addRow("", help_label)
 
+    def _sync_source_language(self) -> None:
+        self._source.sync(self.provider_combo.currentData())
+
     def _load(self, config: AppConfig) -> None:
         _select_by_data(self.lang_combo, config.ui_language)
         _select_by_data(self.provider_combo, config.provider)
         self._rebuild_credentials()  # match the selected provider
         _select_by_data(self.local_model_combo, config.local_model)
         _select_by_data(self.local_device_combo, config.local_device)
-        _select_by_data(self.source_combo, config.source_language)
+        self._source.load(config.source_language, config.provider)
         _select_by_data(self.target_combo, config.target_language)
         _select_by_data(self.device_combo, config.audio.device_id)
         self.host_edit.setText(config.vmix.host)
@@ -393,7 +467,7 @@ class SettingsDialog(QDialog):
         config.provider = self.provider_combo.currentData()
         config.local_model = self.local_model_combo.currentData()
         config.local_device = self.local_device_combo.currentData()
-        config.source_language = self.source_combo.currentData()
+        config.source_language = self._source.value()
         config.target_language = self.target_combo.currentData()
         config.audio.device_id = self.device_combo.currentData()
         config.vmix.host = self.host_edit.text().strip()
@@ -442,6 +516,8 @@ class SettingsDialog(QDialog):
         return False
 
     def _sync_runtime_button_label(self) -> None:
+        if not self._show_local:
+            return
         device = self._selected_device()
         size_bytes = local_runtime.pack_for(device).size_bytes
         size_text = f"{size_bytes // 1_000_000} MB" if size_bytes else "1 GB"
@@ -460,6 +536,8 @@ class SettingsDialog(QDialog):
         self._refresh_runtime_state()
 
     def _refresh_runtime_state(self) -> None:
+        if not self._show_local:
+            return
         available = self._local_components_available()
         self.runtime_status_label.setText(
             t("settings.runtime_status_present")
@@ -480,10 +558,10 @@ class SettingsDialog(QDialog):
         """Reflect whether the models for the CURRENT model/language selection
         are already downloaded: after changing the local model or the languages
         it must be clear that the next download fetches the new selection."""
-        if not self._local_components_available():
+        if not self._show_local or not self._local_components_available():
             return
         local_model = self.local_model_combo.currentData()
-        source = self.source_combo.currentData()
+        source = self._source.value()
         target = self.target_combo.currentData()
         cached = local_runtime.models_cached(local_model, source, target)
         if cached is None:
@@ -537,7 +615,7 @@ class SettingsDialog(QDialog):
         self.runtime_progress.setVisible(True)
         self.runtime_progress.setRange(0, 0)  # model downloads: busy indicator
         local_model = self.local_model_combo.currentData()
-        source = self.source_combo.currentData()
+        source = self._source.value()
         target = self.target_combo.currentData()
 
         def worker() -> None:

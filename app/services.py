@@ -30,6 +30,12 @@ logger = logging.getLogger("app.services")
 
 SubtitleCallback = Callable[[str], None]
 LevelCallback = Callable[[float], None]
+# (channel, ok, operator message or ""): drives the API/vMix status lights
+StatusCallback = Callable[[str, bool, str], None]
+
+# status channels reported during a translation
+STATUS_API = "api"
+STATUS_VMIX = "vmix"
 
 
 @dataclass
@@ -49,7 +55,10 @@ class AppServices(abc.ABC):
     def __init__(self) -> None:
         self._subtitle_listener: SubtitleCallback | None = None
         self._error_listener: SubtitleCallback | None = None
+        self._status_listener: StatusCallback | None = None
         self._config: AppConfig | None = None
+        # True while a translation is running (read by the GUI after START/STOP)
+        self.running = False
 
     def update_config(self, config: AppConfig) -> None:
         """Current configuration: the GUI updates it on every change."""
@@ -62,6 +71,17 @@ class AppServices(abc.ABC):
         """Pipeline errors during translation (e.g. vMix down, provider
         disconnected). May arrive from worker threads: marshal onto the Qt thread."""
         self._error_listener = callback
+
+    def set_status_listener(self, callback: StatusCallback | None) -> None:
+        """Health of the provider (STATUS_API) and of vMix (STATUS_VMIX) during
+        a translation: ok=False when it starts failing, ok=True when it works
+        (again), with an optional operator message. May arrive from worker
+        threads: marshal onto the Qt thread."""
+        self._status_listener = callback
+
+    def _emit_status(self, channel: str, ok: bool, message: str = "") -> None:
+        if self._status_listener is not None:
+            self._status_listener(channel, ok, message)
 
     def _emit_subtitle(self, text: str) -> None:
         if self._subtitle_listener is not None:
@@ -98,6 +118,63 @@ class AppServices(abc.ABC):
 
     @abc.abstractmethod
     def stop_translation(self) -> ServiceResult: ...
+
+
+class _VmixPublisher:
+    """Sends the subtitles of one translation session to vMix.
+
+    Tracks whether vMix is answering, so the operator is told once when it
+    starts failing (not on every subtitle) and sees the vMix light turn green
+    again when it recovers; the log records the session's first successful
+    send, because a success is otherwise silent and a live-show post-mortem
+    could not tell whether vMix ever received anything."""
+
+    def __init__(
+        self,
+        vmix: VmixOutput,
+        on_error: SubtitleCallback,
+        on_status: StatusCallback,
+    ) -> None:
+        self.vmix = vmix
+        self._on_error = on_error
+        self._on_status = on_status
+        self._delivered = False
+        self.failing = False
+
+    def publish(self, text: str) -> None:
+        try:
+            self.vmix.set_text(text)
+        except VmixError as exc:
+            self._fail(str(exc))
+            return
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+            # e.g. port pasted into the Host field: an invalid URL, which
+            # would otherwise log a traceback for every subtitle
+            logger.debug("Indirizzo vMix non valido: %s", type(exc).__name__)
+            self._fail(
+                t("service.vmix_invalid_address", host=self.vmix.host, port=self.vmix.port)
+            )
+            return
+        first = not self._delivered
+        recovered = self.failing
+        self._delivered = True
+        self.failing = False
+        if first:
+            logger.info(
+                "vMix raggiungibile: primo invio riuscito a %s:%s (input '%s', campo '%s')",
+                self.vmix.host,
+                self.vmix.port,
+                self.vmix.input,
+                self.vmix.selected_name,
+            )
+        if first or recovered:
+            self._on_status(STATUS_VMIX, True, "")
+
+    def _fail(self, message: str) -> None:
+        if not self.failing:
+            self.failing = True
+            self._on_error(message)
+            self._on_status(STATUS_VMIX, False, "")
 
 
 class MockAppServices(AppServices):
@@ -167,6 +244,9 @@ class LiveAppServices(MockAppServices):
         self._secret_store = secret_store
         self._pipeline = None
         self._vmix: VmixOutput | None = None
+        self._publisher: _VmixPublisher | None = None
+        # set by a provider error, cleared when translation flows again
+        self._api_failed = False
 
     def update_config(self, config: AppConfig) -> None:
         super().update_config(config)
@@ -279,26 +359,17 @@ class LiveAppServices(MockAppServices):
             input=vmix_config.input,
             selected_name=vmix_config.selected_name,
         )
-        # notify the vMix error only once while it persists, so as not to
-        # flood the operator on every subtitle
-        vmix_error_shown = {"flag": False}
-
-        def publish_to_vmix(text: str) -> None:
-            try:
-                vmix.set_text(text)
-                vmix_error_shown["flag"] = False
-            except VmixError as exc:
-                if not vmix_error_shown["flag"]:
-                    vmix_error_shown["flag"] = True
-                    self._emit_error(str(exc))
+        publisher = _VmixPublisher(vmix, self._emit_error, self._emit_status)
+        self._api_failed = False
 
         pipeline = TranslationPipeline(
             self._make_provider(),
             self._config,
-            on_subtitle=self._emit_subtitle,
-            output_publish=publish_to_vmix,
-            on_error=self._emit_error,
+            on_subtitle=self._on_pipeline_subtitle,
+            output_publish=publisher.publish,
+            on_error=self._on_provider_error,
             audio_input=self._audio,
+            on_recovered=self._on_provider_recovered,
         )
         try:
             pipeline.start()
@@ -308,6 +379,12 @@ class LiveAppServices(MockAppServices):
             logger.warning("Avvio provider fallito: %s", type(exc).__name__)
             vmix.close()
             return ServiceResult(False, str(exc))
+        except TimeoutError:
+            # the provider did not answer the connection in time (slow or
+            # missing Internet): say so instead of "consult the logs"
+            logger.warning("Avvio provider scaduto: nessuna risposta dal servizio")
+            vmix.close()
+            return ServiceResult(False, t("service.provider_timeout"))
         except Exception:
             logger.exception("Avvio pipeline fallito")
             vmix.close()
@@ -316,20 +393,43 @@ class LiveAppServices(MockAppServices):
             )
         self._pipeline = pipeline
         self._vmix = vmix
+        self._publisher = publisher
         self.running = True
         return ServiceResult(True, t("service.translation_started"))
+
+    def _on_provider_error(self, message: str) -> None:
+        self._api_failed = True
+        self._emit_error(message)
+        self._emit_status(STATUS_API, False)
+
+    def _on_provider_recovered(self) -> None:
+        self._api_failed = False
+        self._emit_status(STATUS_API, True, t("provider.connection_restored"))
+
+    def _on_pipeline_subtitle(self, text: str) -> None:
+        if text and self._api_failed:
+            # translated text is flowing again: the provider has recovered
+            self._api_failed = False
+            self._emit_status(STATUS_API, True)
+        self._emit_subtitle(text)
 
     def stop_translation(self) -> ServiceResult:
         if self._pipeline is not None:
             self._pipeline.stop()
             self._pipeline = None
         if self._vmix is not None:
-            try:
-                self._vmix.clear_text()  # clear the title at the end of the live show
-            except VmixError:
-                pass
+            if self._publisher is not None and self._publisher.failing:
+                # vMix is not answering: clearing the title would only add
+                # two more timeouts to the STOP
+                logger.info("vMix non raggiungibile: salto la pulizia del titolo")
+            else:
+                try:
+                    self._vmix.clear_text()  # clear the title at the end of the live show
+                except VmixError:
+                    pass
             self._vmix.close()
             self._vmix = None
+        self._publisher = None
         self.running = False
         return ServiceResult(True, t("service.translation_stopped"))
 

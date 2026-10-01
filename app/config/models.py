@@ -161,3 +161,40 @@ class AppConfig:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def _flatten(data: dict, prefix: str = "") -> dict[str, Any]:
+    """{"vmix": {"port": 8088}} -> {"vmix.port": 8088}."""
+    flat: dict[str, Any] = {}
+    for key, value in data.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            flat.update(_flatten(value, f"{name}."))
+        else:
+            flat[name] = value
+    return flat
+
+
+def describe_config(config: AppConfig) -> str:
+    """One-line dump of the settings, for the log at startup.
+
+    Safe to log: the configuration never holds secrets (API keys live in
+    secure storage), and after a live show it tells exactly how the program
+    was set up (vMix address/title, languages, subtitle timings, overlay).
+    """
+    return ", ".join(f"{key}={value!r}" for key, value in _flatten(config.to_dict()).items())
+
+
+def config_changes(old: AppConfig, new: AppConfig) -> list[str]:
+    """The settings that differ, as "vmix.port: 8088 → 8087" lines.
+
+    Logged when the operator saves: a post-mortem needs to know WHAT changed
+    (e.g. the vMix port), not just that the configuration was saved.
+    """
+    before = _flatten(old.to_dict())
+    after = _flatten(new.to_dict())
+    return [
+        f"{key}: {before.get(key)!r} → {value!r}"
+        for key, value in after.items()
+        if before.get(key) != value
+    ]

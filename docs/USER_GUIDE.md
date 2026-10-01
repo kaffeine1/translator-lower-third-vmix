@@ -145,8 +145,8 @@ l'**anteprima** dell'ultimo sottotitolo tradotto e i pulsanti di comando.
 
 | Pulsante | Funzione |
 |---|---|
-| **START** | Avvia la cattura audio e la traduzione dal vivo. |
-| **STOP** | Ferma tutto in modo pulito (audio e provider). |
+| **START** | Avvia la cattura audio e la traduzione dal vivo. La finestra resta utilizzabile mentre si collega al servizio ("Avvio della traduzione in corso…"). |
+| **STOP** | Ferma tutto in modo pulito (audio e provider), senza bloccare la finestra. |
 | **Test Audio** | Ascolta alcuni secondi e mostra il livello: **verde** se rileva audio, rosso se non arriva nulla. |
 | **Test API** | Verifica il provider di traduzione scelto (o conferma la modalità Demo). |
 | **Test vMix** | Scrive una frase di prova nel titolo vMix configurato. |
@@ -159,12 +159,30 @@ L'anteprima mostra ciò che viene inviato a vMix. Se compaiono errori (API, rete
 vMix) vengono mostrati in modo chiaro, senza finestre modali che bloccano la
 diretta.
 
+Durante la traduzione i semafori seguono lo stato reale:
+
+- **API** diventa rosso se la connessione con il servizio di traduzione cade;
+  l'app riprova da sola finché non torna e, quando riesce, il semaforo torna
+  verde con il messaggio "Connessione ripristinata".
+- **vMix** diventa verde quando vMix riceve il primo sottotitolo e rosso se
+  smette di riceverli (il messaggio d'errore compare una volta sola); torna verde
+  da solo quando vMix risponde di nuovo.
+
+Mentre la traduzione è attiva **Test Audio** è disattivato: userebbe lo stesso
+ingresso audio della traduzione.
+
 ---
 
 ## 7. Impostazioni in dettaglio
 
 Le Impostazioni sono divise in gruppi. Se lo schermo è basso, la finestra scorre
 in verticale e i pulsanti **Salva / Annulla** restano sempre visibili in fondo.
+
+> **Rotella del mouse:** nelle Impostazioni la rotella scorre sempre la pagina e
+> **non cambia mai** i valori dei campi (porta, numeri, menu a tendina). Per
+> cambiare un valore fai clic sul campo e digita, oppure usa le frecce. Dopo il
+> salvataggio, se hai cambiato un'impostazione vMix, la barra di stato mostra
+> cosa è cambiato (es. «Porta 8088 → 8087»): premi **Test vMix** per verificare.
 
 ### Interfaccia
 - **Lingua interfaccia**: lingua dei testi dell'applicazione. Al momento è
@@ -173,6 +191,10 @@ in verticale e i pulsanti **Salva / Annulla** restano sempre visibili in fondo.
 ### Provider
 - **Provider**: il servizio di traduzione (vedi [§9](#9-scegliere-e-configurare-il-provider)).
 - **Lingua sorgente**: la lingua parlata nell'evento (predefinita **Spagnolo**).
+  Con **OpenAI Realtime** la lingua parlata viene **rilevata automaticamente**
+  dal servizio: il campo mostra «Rilevata automaticamente dal servizio» e non si
+  può cambiare, e i relatori possono parlare lingue diverse. Con gli altri
+  provider la lingua va scelta.
 - **Lingua di uscita**: la lingua del sottotitolo (predefinita **Italiano**).
   Lingue disponibili: Spagnolo, Italiano, Inglese, Francese, Portoghese.
 
@@ -226,6 +248,13 @@ Note importanti:
 - **Campo di testo**: nome del campo del titolo, predefinito `Headline.Text`.
 
 ### Provider locali (offline)
+
+> **Nascosti in questa versione.** I provider locali restano nel programma ma
+> non compaiono nell'interfaccia (selettore, Impostazioni, procedura guidata):
+> gli operatori usano OpenAI. Le istruzioni qui sotto valgono quando verranno
+> riattivati; una configurazione che già usa il provider Locale continua a
+> funzionare e mostra i suoi controlli.
+
 - **Modello locale**: dimensione del modello di riconoscimento vocale locale:
   `tiny`, `base`, `small` (predefinito), `medium`, `large-v3`. Modelli più grandi
   sono più accurati ma più lenti e richiedono più memoria.
@@ -283,12 +312,12 @@ procedura guidata). Le voci disponibili sono:
 
 | Provider | Credenziali richieste | Note |
 |---|---|---|
-| **OpenAI Realtime** | Chiave API OpenAI | Traduzione in tempo reale via API OpenAI. |
+| **OpenAI Realtime** | Chiave API OpenAI | Traduzione in tempo reale via API OpenAI. La lingua parlata viene rilevata automaticamente. |
 | **Demo (senza API)** | Nessuna | Mostra frasi di esempio: ideale per collaudare audio e vMix senza spese. |
 | **Demo (speech + traduzione separati)** | Nessuna | Come sopra, ma simula la pipeline "voce + traduzione" separate. |
 | **Google Speech → Google Translate** | Credenziali Google (JSON) + chiave API Google Translate | Tutto su Google: un solo fornitore. |
 | **Azure Speech → Azure Translator** | Chiave Azure + regione Azure | Tutto su Azure con la stessa chiave/regione (risorsa multiservizio). |
-| **Locale (Faster-Whisper → MarianMT)** | Nessuna | Offline: riconoscimento e traduzione sul tuo PC. Richiede componenti aggiuntivi e hardware adeguato. |
+| **Locale (Faster-Whisper → MarianMT)** | Nessuna | Offline: riconoscimento e traduzione sul tuo PC. Richiede componenti aggiuntivi e hardware adeguato. **Nascosto in questa versione** (vedi sotto). |
 
 Dettagli sulle credenziali:
 
@@ -301,6 +330,12 @@ Dettagli sulle credenziali:
 - **Azure**: chiave del servizio *Speech* **e** la **regione** (es. `westeurope`).
   Per **Azure → Azure** la stessa chiave e regione traducono anche il testo, se la
   risorsa Azure è **multiservizio** (Azure AI services).
+
+> **Nascosti in questa versione.** I provider locali restano nel programma ma
+> non compaiono nell'interfaccia (selettore, Impostazioni, procedura guidata):
+> gli operatori usano OpenAI. Le istruzioni qui sotto valgono quando verranno
+> riattivati; una configurazione che già usa il provider Locale continua a
+> funzionare e mostra i suoi controlli.
 
 > **Provider locali**: la parte software è presente, ma per usarli servono
 > componenti aggiuntivi (elencati in `requirements-optional.txt`) e, per essere
@@ -366,9 +401,11 @@ provare il resto della catena.
 **Durante l'evento:**
 
 5. Premi **START**. Il testo tradotto appare nell'anteprima e nel sottopancia di
-   vMix.
+   vMix, e il semaforo **vMix** diventa verde al primo sottotitolo ricevuto.
 6. Tieni d'occhio i semafori: se qualcosa diventa rosso, l'app mostra un
-   messaggio comprensibile (vedi [§14](#14-risoluzione-dei-problemi)).
+   messaggio comprensibile (vedi [§14](#14-risoluzione-dei-problemi)). Se cade
+   la connessione a Internet **non serve premere STOP/START**: l'app si
+   ricollega da sola appena la rete torna.
 
 **A fine evento:**
 
@@ -412,7 +449,17 @@ compromesso per il parlato dal vivo.
 - Il pulsante **Info** mostra nome e versione dell'app, il provider attivo, le
   lingue e i percorsi di configurazione e log — utile da comunicare in caso di
   richiesta di assistenza.
-- I log sono a rotazione: non crescono all'infinito.
+- I log sono a rotazione: non crescono all'infinito. Se vMix resta
+  irraggiungibile a lungo, il log non ripete l'errore a ogni sottotitolo ma
+  scrive un riepilogo al minuto.
+- Per ricostruire una diretta a posteriori i log registrano anche: la
+  configurazione all'avvio, **cosa è stato cambiato** nelle Impostazioni (es.
+  `vmix.port: 8088 → 8087`), l'accensione/spegnimento dei **sottotitoli a
+  schermo**, i monitor collegati o scollegati, il **primo sottotitolo arrivato a
+  vMix** in ogni sessione e le riconnessioni al servizio di traduzione.
+- `crash.log` contiene un segno di **avvio** e di **chiusura regolare** per ogni
+  sessione: se il programma si chiude all'improvviso, lì si vede se si è trattato
+  di un errore interno o di una chiusura forzata dall'esterno.
 
 ---
 
@@ -433,10 +480,13 @@ compromesso per il parlato dal vivo.
 | Messaggio / sintomo | Cosa fare |
 |---|---|
 | **Nessun audio in ingresso** | Controlla il dispositivo selezionato e i cavi; verifica con **Test Audio** mentre parli nella sorgente. |
-| **vMix non raggiungibile** | Verifica che vMix sia aperto e che il **Web Controller** (porta `8088`) sia attivo; controlla Host e Porta nelle Impostazioni. |
+| **vMix non raggiungibile** | Verifica che vMix sia aperto e che il **Web Controller** sia attivo; nelle Impostazioni la **Porta** deve essere la stessa indicata in vMix (*Settings → Web Controller*, di solito `8088`). |
 | **Manca il nome del titolo** | Compila il campo **Input / Titolo** nelle Impostazioni vMix. |
 | **Chiave API non valida** | Reinserisci la chiave in *Impostazioni → Credenziali* e riprova con **Test API**. |
 | **Connessione Internet assente** | I provider cloud richiedono Internet: controlla la rete. |
+| **Connessione persa, riprovo…** | Nessuna azione: l'app si ricollega da sola appena la rete torna e mostra "Connessione ripristinata". |
+| **Il servizio di traduzione non risponde** | Allo START il servizio non ha risposto entro 10 s: controlla Internet e premi di nuovo START. |
+| **Credito OpenAI esaurito** | Ricarica il credito dell'account OpenAI, poi premi START. |
 | **Pacchetti locali non installati** | Il provider **Locale** richiede i componenti di `requirements-optional.txt`: usa un provider cloud/Demo oppure installali. |
 | **Indirizzo vMix non valido** | Controlla che nell'Host non sia inclusa la porta (Host e Porta sono campi separati). |
 | **L'overlay non compare / è sul monitor sbagliato** | In *Impostazioni → Sottotitoli a schermo* attiva l'overlay e scegli il **Monitor** corretto; l'overlay appare quando arriva il primo sottotitolo. |
@@ -481,8 +531,9 @@ Regola le impostazioni dei **Sottotitoli** ([§11](#11-le-regole-dei-sottotitoli
 aumenta l'intervallo minimo e "Mantieni sottotitolo" per più stabilità.
 
 **Posso cambiare la lingua tradotta?**
-Sì, in *Impostazioni → Provider* imposta **Lingua sorgente** e **Lingua di
-uscita** tra quelle disponibili.
+Sì, in *Impostazioni → Provider* imposta la **Lingua di uscita** tra quelle
+disponibili. Con OpenAI la lingua parlata è rilevata automaticamente; con gli
+altri provider imposta anche la **Lingua sorgente**.
 
 **Posso tradurre un video riprodotto sul PC?**
 Sì: come ingresso audio scegli una voce **"Uscita di sistema (loopback)"** e

@@ -34,19 +34,27 @@ from app import (
     __version__,
 )
 from app.config.manager import ConfigManager, get_log_dir
-from app.config.models import AppConfig
+from app.config.models import AppConfig, config_changes
 from app.config.secrets import SecretStorageError, SecretStore
 from app.gui.settings_dialog import SettingsDialog
-from app.gui.subtitle_overlay import SubtitleOverlay, screen_by_name
+from app.gui.subtitle_overlay import (
+    SubtitleOverlay,
+    describe_screen,
+    describe_screens,
+    screen_by_name,
+)
 from app.gui.widgets import AudioLevelMeter, StatusLight, StatusState, SubtitlePreview
 from app.i18n import t
-from app.services import AppServices, ServiceResult
+from app.services import STATUS_API, STATUS_VMIX, AppServices, ServiceResult
 
 logger = logging.getLogger("app.gui")
 
 
 AUDIO_TEST_DURATION_MS = 5000
 AUDIO_DETECTED_THRESHOLD = 0.02
+# on close, how long to wait for a START/STOP/test still running on a worker
+# thread (a START can wait up to 10 s for the provider to answer)
+SERVICE_JOIN_TIMEOUT_S = 15.0
 
 
 class MainWindow(QMainWindow):
@@ -57,6 +65,9 @@ class MainWindow(QMainWindow):
     audio_level = Signal(float)
     # Pipeline errors during translation (worker thread).
     translation_error = Signal(str)
+    # Provider/vMix health during translation (worker thread):
+    # (channel, ok, operator message or "").
+    link_status = Signal(str, bool, str)
     # Results of service calls run on worker threads (HTTP etc.):
     # (result, completion callback to run on the GUI thread).
     _service_done = Signal(object, object)
@@ -78,6 +89,10 @@ class MainWindow(QMainWindow):
         self._audio_monitoring = False
         self._audio_peak = 0.0
         self._closing = False
+        # START/STOP run on a worker thread: _run_busy while one is in flight,
+        # _running while a translation is active
+        self._run_busy = False
+        self._running = False
         self._service_threads: set[threading.Thread] = set()
         self._audio_test_timer = QTimer(self)
         self._audio_test_timer.setSingleShot(True)
@@ -176,6 +191,8 @@ class MainWindow(QMainWindow):
         self._services.set_subtitle_listener(self.subtitle_received.emit)
         self.translation_error.connect(self._on_translation_error)
         self._services.set_error_listener(self.translation_error.emit)
+        self.link_status.connect(self._on_link_status)
+        self._services.set_status_listener(self.link_status.emit)
         self.audio_level.connect(self._on_audio_level)
         self._audio_test_timer.timeout.connect(self._finish_audio_test)
         self._service_done.connect(self._on_service_done)
@@ -184,25 +201,62 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ slot
 
+    # START and STOP run on a worker thread: connecting to the provider can
+    # take up to 10 s and stopping waits for the workers and for vMix, and a
+    # window frozen that long reads "Not responding" to the operator (clicks
+    # made meanwhile would also fire late, all at once).
+
     def _on_start(self) -> None:
+        if self._run_busy or self._running:
+            return
         if self._audio_monitoring:
             self._finish_audio_test()
-        result = self._call_service(self._services.start_translation)
-        if result and result.ok:
-            self.btn_start.setEnabled(False)
-            self.btn_stop.setEnabled(True)
+        self._run_busy = True
+        self._update_run_buttons()
+        self.statusBar().showMessage(t("gui.translation_starting"))
+        self._call_service_async(self._services.start_translation, self._after_start)
+
+    def _after_start(self, result: ServiceResult | None) -> None:
+        self._run_busy = False
+        self._running = bool(result and result.ok)
+        self._update_run_buttons()
 
     def _on_stop(self) -> None:
-        result = self._call_service(self._services.stop_translation)
-        if result and result.ok:
-            self.btn_start.setEnabled(True)
-            self.btn_stop.setEnabled(False)
+        if self._run_busy or not self._running:
+            return
+        self._run_busy = True
+        self._update_run_buttons()
+        self.statusBar().showMessage(t("gui.translation_stopping"))
+        self._call_service_async(self._services.stop_translation, self._after_stop)
+
+    def _after_stop(self, result: ServiceResult | None) -> None:
+        self._run_busy = False
+        # a STOP that failed half-way keeps STOP available for another try
+        self._running = bool(getattr(self._services, "running", False))
+        self._update_run_buttons()
+
+    def _update_run_buttons(self) -> None:
+        busy, running = self._run_busy, self._running
+        self.btn_start.setEnabled(not busy and not running)
+        self.btn_stop.setEnabled(not busy and running)
+        # the audio test would take over the capture device of the translation
+        self.btn_test_audio.setEnabled(not busy and not running)
+        self.btn_settings.setEnabled(not busy)
 
     def _on_translation_error(self, message: str) -> None:
-        # live error: visible but not modal (does not interrupt the event)
-        self.vmix_light.set_state(StatusState.RED)
+        # live error: visible but not modal (does not interrupt the event); the
+        # status lights follow link_status, which knows whether the provider or
+        # vMix is failing
         self.statusBar().showMessage(message, 8000)
         logger.warning("Errore traduzione: %s", message)
+
+    def _on_link_status(self, channel: str, ok: bool, message: str) -> None:
+        light = {STATUS_API: self.api_light, STATUS_VMIX: self.vmix_light}.get(channel)
+        if light is not None:
+            light.set_state(StatusState.GREEN if ok else StatusState.RED)
+        if message:
+            self.statusBar().showMessage(message, 8000)
+            (logger.info if ok else logger.warning)("%s", message)
 
     def _on_test_audio(self) -> None:
         if self._audio_monitoring:
@@ -291,6 +345,9 @@ class MainWindow(QMainWindow):
                 t("gui.settings_save_failed"),
             )
             return False
+        changes = config_changes(old_config, new_config) if old_config is not None else []
+        if changes:
+            logger.info("Impostazioni modificate: %s", "; ".join(changes))
         self._config = new_config
         self._services.update_config(new_config)
         # invalidate ONLY the status lights whose settings actually changed, so
@@ -319,8 +376,36 @@ class MainWindow(QMainWindow):
                 t("gui.settings_title"),
                 t("gui.local_device_restart"),
             )
-        self.statusBar().showMessage(t("gui.settings_saved"), 5000)
+        vmix_changes = self._describe_vmix_changes(old_config, new_config)
+        if vmix_changes:
+            # a vMix address/title changed without the operator noticing (the
+            # mouse wheel over the port field) is what silently broke a live
+            # show: spell out the change and point to Test vMix
+            self.statusBar().showMessage(
+                t("gui.settings_saved_vmix_changed", changes=vmix_changes), 20000
+            )
+        else:
+            self.statusBar().showMessage(t("gui.settings_saved"), 5000)
         return True
+
+    @staticmethod
+    def _describe_vmix_changes(old: AppConfig | None, new: AppConfig) -> str:
+        """The changed vMix settings as "Porta 8088 → 8087" (empty if none)."""
+        if old is None:
+            return ""
+        fields = (
+            ("host", "settings.label.vmix_host"),
+            ("port", "settings.label.vmix_port"),
+            ("input", "settings.label.vmix_input"),
+            ("selected_name", "settings.label.vmix_field"),
+        )
+        parts = []
+        for attr, label_key in fields:
+            before, after = getattr(old.vmix, attr), getattr(new.vmix, attr)
+            if before != after:
+                shown = [str(v) if str(v) else t("gui.value_empty") for v in (before, after)]
+                parts.append(f"{t(label_key).rstrip(':')} {shown[0]} → {shown[1]}")
+        return ", ".join(parts)
 
     # ------------------------------------------------------------------ overlay
 
@@ -338,11 +423,31 @@ class MainWindow(QMainWindow):
         # never keeps a native window on a screen that has been removed
         gui_app = QGuiApplication.instance()
         if gui_app is not None:
-            gui_app.screenAdded.connect(self._on_screens_changed)
-            gui_app.screenRemoved.connect(self._on_screens_changed)
-            gui_app.primaryScreenChanged.connect(self._on_screens_changed)
+            gui_app.screenAdded.connect(self._on_screen_added)
+            gui_app.screenRemoved.connect(self._on_screen_removed)
+            gui_app.primaryScreenChanged.connect(self._on_primary_screen_changed)
         self._sync_overlay_button()
         self._apply_overlay_state()
+        if self._config.overlay.enabled:
+            logger.info(
+                "Sottotitoli a schermo attivi all'avvio (monitor: %s)",
+                self._overlay_monitor_label(),
+            )
+
+    # display-layout changes are logged: a monitor or extender dropping out
+    # during a show is otherwise invisible in a post-mortem
+
+    def _on_screen_added(self, screen) -> None:
+        logger.info("Schermo collegato: %s", describe_screen(screen))
+        self._on_screens_changed()
+
+    def _on_screen_removed(self, screen) -> None:
+        logger.warning("Schermo scollegato: %s", describe_screen(screen))
+        self._on_screens_changed()
+
+    def _on_primary_screen_changed(self, screen) -> None:
+        logger.info("Schermo principale cambiato: %s", describe_screen(screen))
+        self._on_screens_changed()
 
     def _on_screens_changed(self, *_args) -> None:
         """React to a display-layout change (monitor added/removed/primary
@@ -351,6 +456,7 @@ class MainWindow(QMainWindow):
         if self._closing or self._overlay is None:
             return
         try:
+            logger.info("Schermi collegati ora: %s", describe_screens())
             self._overlay.hide()  # drop the native window off a possibly-dead screen
             self._apply_overlay_state()
         except Exception:
@@ -367,7 +473,14 @@ class MainWindow(QMainWindow):
                 background_opacity=overlay_cfg.background_opacity,
             )
             if overlay_cfg.enabled:
-                self._overlay.show_on(screen_by_name(overlay_cfg.monitor))
+                screen = screen_by_name(overlay_cfg.monitor)
+                if overlay_cfg.monitor and (screen is None or screen.name() != overlay_cfg.monitor):
+                    logger.warning(
+                        "Monitor '%s' dei sottotitoli non collegato: uso %s",
+                        overlay_cfg.monitor,
+                        describe_screen(screen),
+                    )
+                self._overlay.show_on(screen)
             else:
                 self._overlay.hide()
         except Exception:
@@ -379,8 +492,16 @@ class MainWindow(QMainWindow):
         self.btn_overlay.setChecked(self._config.overlay.enabled)
         self.btn_overlay.blockSignals(False)
 
+    def _overlay_monitor_label(self) -> str:
+        return self._config.overlay.monitor or "principale"
+
     def _on_overlay_toggled(self, checked: bool) -> None:
         self._config.overlay.enabled = checked
+        logger.info(
+            "Sottotitoli a schermo %s dal pulsante (monitor: %s)",
+            "attivati" if checked else "disattivati",
+            self._overlay_monitor_label(),
+        )
         try:
             self._manager.save(self._config)
         except OSError:
@@ -388,22 +509,24 @@ class MainWindow(QMainWindow):
         self._apply_overlay_state()
 
     def closeEvent(self, event) -> None:  # noqa: N802 (name imposed by Qt)
+        logger.info("Finestra principale chiusa")
         self._closing = True
         if self._overlay is not None:
             self._overlay.close()
         if self._audio_monitoring:
             self._finish_audio_test()
+        # wait for service calls still running on worker threads (their own
+        # timeouts bound the wait): a START completing after the window is
+        # gone must not leave a translation running with nobody to stop it,
+        # and no signal may be emitted during interpreter teardown
+        for thread in list(self._service_threads):
+            thread.join(timeout=SERVICE_JOIN_TIMEOUT_S)
         # translation running: stop it to avoid leaving dangling threads
-        if self.btn_stop.isEnabled():
+        if getattr(self._services, "running", False):
             try:
                 self._services.stop_translation()
             except Exception:
                 logger.exception("Errore fermando la traduzione alla chiusura")
-        # brief wait for in-flight service threads: the httpx timeout (2 s
-        # × 2 attempts) bounds the wait and avoids emitting signals
-        # during interpreter teardown
-        for thread in self._service_threads:
-            thread.join(timeout=5.0)
         super().closeEvent(event)
 
     def _on_open_log(self) -> None:
@@ -417,6 +540,15 @@ class MainWindow(QMainWindow):
         Never contains secrets (the API key is only reported as present)."""
         provider = self._config.provider
         has_key = self._has_saved_api_key()
+        from app.providers.registry import get_provider_info
+
+        info = get_provider_info(provider)
+        # a provider that detects the spoken language ignores the saved one
+        source_language = (
+            t("gui.source_auto_short")
+            if info is not None and info.detects_source_language
+            else self._config.source_language
+        )
         return t(
             "gui.diagnostics",
             app_name=APP_DISPLAY_NAME,
@@ -426,7 +558,7 @@ class MainWindow(QMainWindow):
             author_email=__author_email__,
             provider=provider,
             has_key=t("gui.yes") if has_key else t("gui.no"),
-            source_language=self._config.source_language,
+            source_language=source_language,
             target_language=self._config.target_language,
             vmix_host=self._config.vmix.host,
             vmix_port=self._config.vmix.port,

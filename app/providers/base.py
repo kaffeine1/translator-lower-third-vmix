@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 TextCallback = Callable[[str], None]
 ErrorCallback = Callable[[str], None]
+EventCallback = Callable[[], None]
 
 
 class ProviderError(Exception):
@@ -57,6 +58,7 @@ class TextEventEmitter:
         self._partial_callbacks: list[TextCallback] = []
         self._final_callbacks: list[TextCallback] = []
         self._error_callbacks: list[ErrorCallback] = []
+        self._reconnected_callbacks: list[EventCallback] = []
 
     def on_partial_text(self, callback: TextCallback) -> None:
         self._partial_callbacks.append(callback)
@@ -66,6 +68,16 @@ class TextEventEmitter:
 
     def on_error(self, callback: ErrorCallback) -> None:
         self._error_callbacks.append(callback)
+
+    def on_reconnected(self, callback: EventCallback) -> None:
+        """Called when the provider recovered on its own from a dropped
+        connection, so the operator can be told that translation resumed.
+        Providers without automatic reconnection simply never emit it."""
+        self._reconnected_callbacks.append(callback)
+
+    def _emit_reconnected(self) -> None:
+        for callback in self._reconnected_callbacks:
+            callback()
 
     def _emit_partial(self, text: str) -> None:
         for callback in self._partial_callbacks:

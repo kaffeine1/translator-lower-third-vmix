@@ -84,6 +84,12 @@ class ProviderInfo:
     id: str
     display_name: str
     credentials: tuple[CredentialField, ...] = ()
+    # the service recognizes the spoken language by itself: the GUI shows the
+    # source language as detected automatically instead of asking for it
+    detects_source_language: bool = False
+    # offline pipeline (Faster-Whisper → MarianMT): offered in the GUI only when
+    # LOCAL_PROVIDERS_VISIBLE is on (see there)
+    local: bool = False
 
     @property
     def required_key_names(self) -> tuple[str, ...]:
@@ -96,7 +102,11 @@ class ProviderInfo:
 
 # Order = order in the GUI selector (complete realtime providers).
 _REGISTRY: dict[str, ProviderInfo] = {
-    "openai": ProviderInfo("openai", "OpenAI Realtime", (_CRED_OPENAI,)),
+    # the Realtime Translation model detects the input language on its own:
+    # only the output language is configured
+    "openai": ProviderInfo(
+        "openai", "OpenAI Realtime", (_CRED_OPENAI,), detects_source_language=True
+    ),
     "fake": ProviderInfo("fake", "Demo (senza API)"),
     "demo-composed": ProviderInfo("demo-composed", "Demo (speech + traduzione separati)"),
     "google-google": ProviderInfo(
@@ -110,14 +120,30 @@ _REGISTRY: dict[str, ProviderInfo] = {
         (_CRED_AZURE, _CRED_AZURE_REGION),
     ),
     # local (offline) pipeline: no credentials, needs the optional local packages
-    "local": ProviderInfo("local", "Locale (Faster-Whisper → MarianMT)"),
+    "local": ProviderInfo("local", "Locale (Faster-Whisper → MarianMT)", local=True),
 }
 
 DEFAULT_PROVIDER_ID = "openai"
 
+# The offline local providers stay in the code base, fully working, but are
+# hidden from the GUI (provider selector, Settings group, wizard) because the
+# operators use OpenAI and the extra options only confused them. Set to True to
+# bring them back. A configuration that already uses "local" keeps working and
+# still shows its controls.
+LOCAL_PROVIDERS_VISIBLE = False
 
-def available_providers() -> list[ProviderInfo]:
-    return list(_REGISTRY.values())
+
+def local_providers_visible() -> bool:
+    return LOCAL_PROVIDERS_VISIBLE
+
+
+def available_providers(include_hidden: bool = False) -> list[ProviderInfo]:
+    """The providers offered in the GUI selector (hidden ones only on request)."""
+    return [
+        info
+        for info in _REGISTRY.values()
+        if include_hidden or not info.local or local_providers_visible()
+    ]
 
 
 def all_credential_accounts() -> set[str]:

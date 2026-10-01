@@ -6,11 +6,54 @@ from __future__ import annotations
 
 from enum import Enum
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QFrame, QLabel, QProgressBar, QVBoxLayout
+from PySide6.QtWidgets import (
+    QAbstractSlider,
+    QAbstractSpinBox,
+    QComboBox,
+    QFrame,
+    QLabel,
+    QProgressBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.i18n import t
+
+
+class _WheelGuard(QObject):
+    """Event filter that keeps the mouse wheel from changing a form field.
+
+    Over a spin box, combo box or slider Qt changes the value with the wheel.
+    In a scrolling settings form, the fields slide under the pointer while the
+    operator scrolls the page, and their values change unnoticed: that is how
+    the vMix port went 8088 → 8089 and 8088 → 8087 at two live shows. The
+    wheel event is ignored by the field and Qt passes it on to the parents, so
+    the page scrolls instead; a value changes only by clicking, typing or with
+    the arrow keys.
+    """
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 (Qt name)
+        if event.type() == QEvent.Type.Wheel:
+            event.ignore()  # not accepted: Qt propagates it to the parent widgets
+            return True  # never delivered to the field itself
+        return False
+
+
+def disable_wheel_on_fields(root: QWidget) -> None:
+    """Make the mouse wheel scroll the page instead of changing the value of
+    any spin box, combo box or slider inside ``root`` (see _WheelGuard).
+
+    Safe to call again after adding fields: a widget keeps a single guard."""
+    guard = root.findChild(_WheelGuard)
+    if guard is None:
+        guard = _WheelGuard(root)
+    for kind in (QAbstractSpinBox, QComboBox, QAbstractSlider):
+        for field in root.findChildren(kind):
+            # no focus grab by the wheel either (the default for these fields)
+            field.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            field.installEventFilter(guard)
 
 
 def credential_help_label(cred) -> QLabel | None:

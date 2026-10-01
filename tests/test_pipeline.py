@@ -218,3 +218,84 @@ def test_output_queue_drain_never_swallows_shutdown_sentinel():
         items.append(pipeline._output_queue.get_nowait())
     assert _OUTPUT_SENTINEL in items  # the worker will still shut down
     assert "testo" in items
+
+
+# ---------------------------------------------------------------- provider health
+
+
+def test_pipeline_forwards_provider_reconnection():
+    import asyncio
+
+    from app.providers.base import RealtimeTranslationProvider
+
+    class ReconnectingProvider(RealtimeTranslationProvider):
+        async def connect(self, config):
+            asyncio.get_running_loop().call_later(0.05, self._emit_reconnected)
+
+        async def send_audio(self, chunk):
+            return None
+
+        async def close(self):
+            return None
+
+    recovered = []
+    pipeline = TranslationPipeline(
+        ReconnectingProvider(),
+        _fast_config(),
+        on_subtitle=_Collector(),
+        output_publish=_Collector(),
+        on_recovered=lambda: recovered.append(True),
+    )
+    pipeline.start()
+    try:
+        assert _wait_until(lambda: recovered == [True])
+    finally:
+        pipeline.stop()
+
+
+def test_services_drive_api_status_from_provider_health():
+    from app.audio.input import FakeAudioInput
+    from app.services import STATUS_API, LiveAppServices
+
+    services = LiveAppServices(FakeAudioInput())
+    statuses, errors, subtitles = [], [], []
+    services.set_status_listener(
+        lambda channel, ok, message: statuses.append((channel, ok, message))
+    )
+    services.set_error_listener(errors.append)
+    services.set_subtitle_listener(subtitles.append)
+
+    services._on_provider_error("Connessione persa, riprovo…")
+    assert statuses == [(STATUS_API, False, "")]
+    assert errors == ["Connessione persa, riprovo…"]
+    services._on_pipeline_subtitle("")  # an empty clear is no sign of recovery
+    assert len(statuses) == 1
+    services._on_pipeline_subtitle("Ciao a tutti")  # translation flows again
+    assert statuses[-1] == (STATUS_API, True, "")
+    assert subtitles == ["", "Ciao a tutti"]
+
+    services._on_provider_error("Connessione persa, riprovo…")
+    services._on_provider_recovered()  # reconnected, even before anyone speaks
+    channel, ok, message = statuses[-1]
+    assert (channel, ok) == (STATUS_API, True)
+    assert "ripristinata" in message.lower()
+
+
+def test_start_timeout_gives_a_readable_message(monkeypatch):
+    # 18/09: eleven STARTs timed out waiting for OpenAI and the operator only
+    # read "Impossibile avviare la traduzione. Consulta i log."
+    from app.audio.input import FakeAudioInput
+    from app.config.secrets import InMemorySecretStore
+    from app.services import LiveAppServices
+
+    def timed_out_start(self):
+        raise TimeoutError()
+
+    monkeypatch.setattr(TranslationPipeline, "start", timed_out_start)
+    services = LiveAppServices(FakeAudioInput(), InMemorySecretStore())
+    services.update_config(AppConfig())
+    result = services.start_translation()
+    assert result.ok is False
+    assert "non risponde" in result.message
+    assert "Internet" in result.message
+    assert services.running is False

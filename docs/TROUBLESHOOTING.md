@@ -49,23 +49,46 @@ problema. Il pulsante **Apri Log** mostra i dettagli tecnici; il pulsante
   aziendale, verifica che le connessioni sicure in uscita siano permesse.
 
 ### Connessione persa durante la diretta
-- **Cosa vedi:** nella barra di stato "Connessione persa, riprovo…".
+- **Cosa vedi:** nella barra di stato "Connessione persa, riprovo…" e il
+  semaforo **API** rosso. Se la rete non torna subito compare anche il motivo
+  (es. "Impossibile raggiungere OpenAI. Controlla la connessione Internet.").
 - **Causa:** caduta temporanea della rete o del servizio.
-- **Soluzione:** nessuna azione richiesta: l'app riprova automaticamente. Se
-  persiste, controlla la rete e, se serve, premi STOP e poi START.
+- **Soluzione:** nessuna azione richiesta: l'app **riprova da sola finché la
+  connessione non torna** (a intervalli crescenti, fino a uno ogni 30 secondi).
+  Quando riesce compare "Connessione ripristinata: la traduzione è di nuovo
+  attiva" e il semaforo API torna verde. Non serve premere STOP e START.
+
+### Il servizio di traduzione non risponde
+- **Cosa vedi:** premendo **START** compare "Il servizio di traduzione non
+  risponde. Controlla la connessione Internet e riprova."
+- **Causa:** il servizio non ha risposto entro 10 secondi (rete lenta o assente).
+- **Soluzione:** controlla la connessione a Internet e premi di nuovo START.
+
+### Credito OpenAI esaurito
+- **Cosa vedi:** "Credito OpenAI esaurito: ricarica il credito del tuo account
+  OpenAI e riprova."
+- **Causa:** il credito prepagato dell'account OpenAI è finito.
+- **Soluzione:** ricarica il credito sul sito di OpenAI (sezione Billing), poi
+  premi START.
 
 ---
 
 ## vMix
 
 ### vMix non raggiungibile
-- **Cosa vedi:** dopo **Test vMix** il semaforo vMix è rosso e compare
-  "vMix non raggiungibile su HOST:PORTA".
+- **Cosa vedi:** dopo **Test vMix**, o durante la traduzione, il semaforo vMix è
+  rosso e compare "vMix non raggiungibile su HOST:PORTA". Durante la traduzione
+  il messaggio compare una volta sola; il semaforo torna verde da solo appena
+  vMix riceve di nuovo i sottotitoli.
 - **Causa:** vMix non è aperto, oppure il suo Web Controller / API è spento, o
   l'indirizzo/porta è errato.
 - **Soluzione:** apri vMix e attiva il **Web Controller** (porta predefinita
   8088); nelle **Impostazioni** dell'app controlla **Host** (di norma
-  `127.0.0.1`) e **Porta** (`8088`).
+  `127.0.0.1`) e **Porta**: deve essere **la stessa porta indicata in vMix**
+  (*Settings → Web Controller*), di solito `8088`. Poi premi **Test vMix**.
+  Con le versioni precedenti alla 0.3.3 la porta poteva cambiare **da sola di
+  un'unità** (es. `8087` o `8089`) scorrendo le Impostazioni con la rotella del
+  mouse: controlla che il numero sia proprio quello di vMix.
 
 ### Indirizzo vMix non valido
 - **Cosa vedi:** "Indirizzo vMix non valido (…). Controlla i campi Host e Porta."

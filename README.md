@@ -61,7 +61,7 @@ Spanish live audio  →  Italian subtitle
 | **Demo (speech + traduzione separati)** | Local, no cost | — | Same, simulating the split speech/translation pipeline. |
 | **Google Speech → DeepL** | Cloud, composed | Google credentials + DeepL key | Google STT + DeepL translation. |
 | **Azure Speech → DeepL** | Cloud, composed | Azure key + region + DeepL key | Azure STT + DeepL translation. |
-| **Locale (Faster-Whisper → MarianMT)** | Offline | — | Runs on your PC. Needs the optional packages (`requirements-optional.txt`) and, for smooth use, a GPU. |
+| **Locale (Faster-Whisper → MarianMT)** | Offline | — | Runs on your PC. Needs the optional packages (`requirements-optional.txt`) and, for smooth use, a GPU. Hidden from the GUI by default: set `LOCAL_PROVIDERS_VISIBLE = True` in `app/providers/registry.py` to show it. |
 
 > A ChatGPT Plus/Pro subscription is **not** API access — the app uses provider
 > **APIs and API keys**, not a browser session.

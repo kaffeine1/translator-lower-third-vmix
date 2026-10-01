@@ -290,8 +290,9 @@ def test_local_registry_entries():
         get_translation_provider_info,
     )
 
-    ids = [info.id for info in available_providers()]
-    assert "local" in ids
+    # registered and working, but hidden from the GUI selector by default
+    assert "local" in [info.id for info in available_providers(include_hidden=True)]
+    assert "local" not in [info.id for info in available_providers()]
     # local pipeline needs no credentials
     assert get_provider_info("local").requires_api_key is False
     assert get_speech_provider_info("faster-whisper") is not None

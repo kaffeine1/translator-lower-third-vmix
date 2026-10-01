@@ -68,6 +68,23 @@ def available_monitors() -> list[MonitorInfo]:
     return monitors
 
 
+def describe_screen(screen: QScreen | None) -> str:
+    """The screen as "Name WxH" for the logs; tolerant of a screen being torn
+    down by a display-layout change."""
+    if screen is None:
+        return "(nessuno)"
+    try:
+        geometry = screen.geometry()
+        return f"{screen.name()} {geometry.width()}x{geometry.height()}"
+    except RuntimeError:
+        return "(schermo non più disponibile)"
+
+
+def describe_screens() -> str:
+    """The connected screens as "K242HL 1920x1080, HDbitT 1280x720"."""
+    return ", ".join(describe_screen(s) for s in QGuiApplication.screens()) or "(nessuno)"
+
+
 def screen_by_name(name: str) -> QScreen | None:
     """The screen with the given name, or the primary screen as a fallback."""
     if name:

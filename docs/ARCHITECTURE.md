@@ -88,8 +88,12 @@ advances (so the test steps run against real values) and returns the config via
   tests run without network. The API key is read from the `SecretStore` (never
   from `config.yaml`) and never appears in logs or error messages. The first
   `connect()` is synchronous so auth/network failures surface immediately; a
-  background task then handles receive plus auto-reconnect with exponential
-  backoff, and `close()` cancels it cleanly. `check_api_key()` validates a key
+  background task then handles receive plus auto-reconnect: after a drop it
+  retries **with no attempt limit** (exponential backoff capped at 30 s, reset
+  once a session has stayed up for 30 s), reports the reason of a failed attempt
+  once per distinct cause and emits `on_reconnected` when a session is back. The
+  planned end of a session (`session_expired`, maximum duration) reopens a new
+  one at once without an operator error. `close()` cancels the task cleanly. `check_api_key()` validates a key
   by opening and closing a session without sending audio (no token cost).
   `LiveAppServices._make_provider()` picks this provider when a key is saved
   and falls back to `FakeTranslationProvider` otherwise — the GUI is unchanged.
@@ -147,8 +151,13 @@ clear_after_silence_seconds: 8
   never retried); failures raise `VmixError` with an Italian operator message.
 - GUI callers go through `MainWindow._call_service_async`, which runs the
   operation on a worker thread and marshals the result back via a Qt signal —
-  Test API/Test vMix never freeze the GUI and their buttons disable while a
-  call is in flight.
+  Test API/Test vMix **and START/STOP** never freeze the GUI and their buttons
+  disable while a call is in flight.
+- During a translation `_VmixPublisher` (services) sends each subtitle: it
+  reports a failure to the operator once, turns the vMix light green on the
+  first delivery and on recovery, and logs the session's first delivery.
+  `VmixOutput` logs a failure streak in detail only at its start, then one
+  summary per minute, and logs the recovery.
 
 ### Configuration (`app/config`)
 
@@ -188,8 +197,11 @@ stops/joins the loop thread, joins the tick and output threads, and resets the
 formatter — no thread is left hanging (covered by a dedicated test). Audio is
 optional: if capture fails the pipeline continues, so the fake-provider demo
 runs without a microphone. Provider errors surface through an error listener
-(`AppServices.set_error_listener`) that the GUI shows in the status bar and the
-vMix light — never a modal dialog mid-event.
+(`AppServices.set_error_listener`) that the GUI shows in the status bar — never a
+modal dialog mid-event. A status listener (`AppServices.set_status_listener`,
+`(channel, ok, message)` with channel `api` or `vmix`) drives the API and vMix
+lights: red when that link fails, green again when the provider reconnects
+(`on_recovered`) or translated text flows again, and when vMix answers.
 
 ### Cloud speech providers (v1.2)
 

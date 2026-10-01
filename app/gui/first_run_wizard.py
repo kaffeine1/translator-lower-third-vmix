@@ -38,8 +38,13 @@ from app import local_runtime
 from app.audio.devices import AudioDevice
 from app.config.models import LOCAL_DEVICES, LOCAL_MODELS, AppConfig
 from app.config.secrets import SecretStorageError, SecretStore
-from app.gui.settings_dialog import LANGUAGES, SYSTEM_DEFAULT_DEVICE, _select_by_data
-from app.gui.widgets import credential_help_label
+from app.gui.settings_dialog import (
+    LANGUAGES,
+    SYSTEM_DEFAULT_DEVICE,
+    SourceLanguageField,
+    _select_by_data,
+)
+from app.gui.widgets import credential_help_label, disable_wheel_on_fields
 from app.i18n import available_locales, t
 from app.providers.registry import available_providers, get_provider_info
 from app.services import AppServices
@@ -374,7 +379,13 @@ class FirstRunWizard(QWizard):
         for label, code in LANGUAGES:
             self.source_combo.addItem(label, code)
             self.target_combo.addItem(label, code)
-        _select_by_data(self.source_combo, config.source_language)
+        # providers that detect the spoken language (OpenAI) show it as
+        # automatic instead of asking for it
+        self._source = SourceLanguageField(self.source_combo)
+        self._source.load(config.source_language, self.provider_combo.currentData())
+        self.provider_combo.currentIndexChanged.connect(
+            lambda _index: self._source.sync(self.provider_combo.currentData())
+        )
         _select_by_data(self.target_combo, config.target_language)
         setup_form.addRow(t("wizard.setup.language_label"), self.lang_combo)
         setup_form.addRow(t("wizard.setup.provider_label"), self.provider_combo)
@@ -439,6 +450,9 @@ class FirstRunWizard(QWizard):
         final_layout = QVBoxLayout(final_page)
         final_layout.addWidget(QLabel(t("wizard.final.note")))
         self.addPage(final_page)
+
+        # the mouse wheel must never change a value under the pointer
+        disable_wheel_on_fields(self)
 
     # ------------------------------------------------------------------ credentials
 
@@ -505,7 +519,7 @@ class FirstRunWizard(QWizard):
         config = AppConfig.from_dict(self._base_config.to_dict())
         config.ui_language = self.lang_combo.currentData()
         config.provider = self.provider_combo.currentData()
-        config.source_language = self.source_combo.currentData()
+        config.source_language = self._source.value()
         config.target_language = self.target_combo.currentData()
         config.local_model = self._credentials_page.local_model_combo.currentData()
         config.local_device = self._credentials_page.local_device_combo.currentData()

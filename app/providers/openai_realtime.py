@@ -20,7 +20,12 @@ Security:
   logged).
 
 Robustness:
-- automatic reconnection with backoff after a dropped connection;
+- automatic reconnection after a dropped connection: it keeps retrying with
+  exponential backoff until the session is back (or STOP), tells the operator
+  why it cannot reconnect (no Internet, invalid key, no credit) and signals
+  when translation resumes;
+- the planned end of a session (``session_expired``, maximum duration) reopens
+  a new session at once, without alarming the operator;
 - close() sends ``session.close`` and waits for ``session.closed`` (or a timeout)
   before dropping the socket, and stops the receive task without leaking threads.
 
@@ -54,7 +59,16 @@ DEFAULT_REALTIME_MODEL = "gpt-realtime-translate"
 # The Realtime WebSocket API expects PCM16 mono at 24 kHz: capture usually runs
 # at a lower rate, so audio is resampled here before being sent.
 OPENAI_INPUT_SAMPLE_RATE = 24000
+# Reconnection after a dropped connection: the first retry comes after
+# RECONNECT_INITIAL_DELAY_S, then the wait doubles up to MAX_BACKOFF_S. A session
+# that stayed up for HEALTHY_SESSION_S resets the backoff, so a flapping
+# connection is not hammered while a single blip is recovered quickly.
+RECONNECT_INITIAL_DELAY_S = 1.0
 MAX_BACKOFF_S = 30.0
+HEALTHY_SESSION_S = 30.0
+# Error code OpenAI sends when a session reaches its maximum duration (60 min):
+# the server then closes the socket and a new session must be opened.
+SESSION_EXPIRED_CODE = "session_expired"
 # How long close() waits for session.closed before forcing the socket shut.
 # Kept well below the pipeline's 5 s outer budget (close() also bounds ws.close
 # to ~2 s) so STOP always tears down in time.
@@ -137,6 +151,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         self._response_buffer = ""
         self._last_delta_at = 0.0
         self._got_output = False  # logged once per session for diagnostics
+        # set when the server announces the planned end of the session
+        self._session_expired = False
         # set by the receive loop when the server acknowledges session.close
         self._closed_ack = asyncio.Event()
 
@@ -149,6 +165,7 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         self._response_buffer = ""
         self._last_delta_at = 0.0
         self._got_output = False
+        self._session_expired = False
         self._closed_ack = asyncio.Event()
         api_key = self._load_key()
         # first synchronous connection: if the key is wrong or the network is
@@ -260,8 +277,22 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
             ws = await self._connector(self._url(), self._headers(api_key))
         except Exception as exc:
             raise self._translate_connect_error(exc) from None
-        await self._send_session_config(ws)
+        try:
+            await self._send_session_config(ws)
+        except Exception as exc:
+            # the server can accept the socket and close it straight away (e.g.
+            # no credit left): report that readably, not as a raw socket error
+            await self._close_quietly(ws)
+            raise self._translate_connect_error(exc) from None
         return ws
+
+    @staticmethod
+    async def _close_quietly(ws: object) -> None:
+        """Best-effort, time-bounded close of a socket we are abandoning."""
+        try:
+            await asyncio.wait_for(ws.close(), timeout=2.0)
+        except Exception:
+            pass
 
     async def _send_session_config(self, ws: object) -> None:
         # GA translation session: configure only the OUTPUT (translation)
@@ -275,7 +306,8 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
         await ws.send(json.dumps(session))
 
     async def _receive_and_reconnect(self, api_key: str) -> None:
-        backoff = 1.0
+        backoff = RECONNECT_INITIAL_DELAY_S
+        opened_at = time.monotonic()
         try:
             # keep reading while not fully closed: during close() we stay in the
             # loop (only _closing is set) so we can still observe session.closed;
@@ -289,29 +321,94 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    logger.warning(
-                        "Connessione OpenAI interrotta: %s", type(exc).__name__
-                    )
+                    if self._session_expired:
+                        logger.info(
+                            "Sessione OpenAI chiusa dal server: %s", type(exc).__name__
+                        )
+                    else:
+                        logger.warning(
+                            "Connessione OpenAI interrotta: %s", type(exc).__name__
+                        )
                 # intentional close: do not treat it as a drop / do not reconnect.
                 # unblock close(): if the socket dropped without a session.closed
                 # frame, no ack will ever arrive, so release the waiter now.
                 if self._closed or self._closing:
                     self._closed_ack.set()
                     break
-                # connection dropped: notify and retry with backoff
-                self._emit_error(t("provider.connection_lost"))
                 self._ws = None
-                await asyncio.sleep(min(backoff, MAX_BACKOFF_S))
-                backoff = min(backoff * 2, MAX_BACKOFF_S)
-                try:
-                    self._ws = await self._open(api_key)
-                    backoff = 1.0
-                except asyncio.CancelledError:
-                    raise
-                except OpenAIProviderError:
-                    continue  # will retry on the next round
+                await self._close_quietly(ws)
+                expired, self._session_expired = self._session_expired, False
+                if time.monotonic() - opened_at >= HEALTHY_SESSION_S:
+                    backoff = RECONNECT_INITIAL_DELAY_S
+                if expired:
+                    # planned end of the session: open a new one at once,
+                    # without alarming the operator
+                    logger.info("Sessione OpenAI scaduta: ne apro una nuova")
+                else:
+                    self._emit_error(t("provider.connection_lost"))
+                ws, failures, backoff = await self._reconnect(
+                    api_key, immediate=expired, backoff=backoff
+                )
+                if ws is None:
+                    break  # STOP arrived while reconnecting
+                self._ws = ws
+                opened_at = time.monotonic()
+                if not expired or failures:
+                    self._emit_reconnected()
         except asyncio.CancelledError:
             pass
+
+    async def _reconnect(
+        self, api_key: str, *, immediate: bool, backoff: float
+    ) -> tuple[object | None, int, float]:
+        """Reopen the session, retrying until it works or the provider closes.
+
+        A live show must recover by itself once the network is back, without
+        the operator pressing STOP/START: there is no attempt limit. The waits
+        grow exponentially up to MAX_BACKOFF_S. The reason for a failure (no
+        Internet, invalid key, no credit) is shown to the operator once per
+        distinct cause, not on every attempt.
+
+        Returns (the new socket or None if closed meanwhile, the number of
+        failed attempts, the backoff to start from after the next drop).
+        """
+        if immediate:
+            wait = 0.0
+        else:
+            wait, backoff = backoff, min(backoff * 2, MAX_BACKOFF_S)
+        failures = 0
+        last_message = ""
+        while True:
+            if wait > 0:
+                await asyncio.sleep(wait)
+            if self._closed or self._closing:
+                return None, failures, backoff
+            try:
+                ws = await self._open(api_key)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                failures += 1
+                message = (
+                    str(exc) if isinstance(exc, ProviderError) and str(exc)
+                    else t("openai.unreachable")
+                )
+                logger.warning(
+                    "Riconnessione OpenAI fallita (tentativo %d): %s", failures, message
+                )
+                if message != last_message:
+                    last_message = message
+                    self._emit_error(message)
+                wait, backoff = backoff, min(backoff * 2, MAX_BACKOFF_S)
+                continue
+            if self._closed or self._closing:
+                # STOP arrived during the handshake: drop the new socket
+                await self._close_quietly(ws)
+                return None, failures, backoff
+            logger.info(
+                "Connessione OpenAI ripristinata (tentativi falliti: %d)", failures
+            )
+            return ws, failures, backoff
 
     async def _receive_loop(self, ws: object) -> None:
         while not self._closed:
@@ -319,6 +416,10 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
             if raw is None:
                 return
             self._handle_message(raw)
+            if self._session_expired:
+                # planned end of the session: do not wait for the server to
+                # drop the socket, the caller opens the new session right away
+                return
 
     def _handle_message(self, raw: str | bytes) -> None:
         try:
@@ -358,15 +459,24 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
             self._closed_ack.set()
         elif event_type == "error":
             code = (data.get("error") or {}).get("code", "?")
+            if code == SESSION_EXPIRED_CODE:
+                # planned end of the session (maximum duration): the server
+                # closes the socket next and the reconnect loop opens a new
+                # session at once, so this is not an error for the operator
+                self._session_expired = True
+                logger.info("Sessione OpenAI scaduta (durata massima raggiunta)")
+                return
             logger.warning("Errore dalla sessione OpenAI: %s", code)
             self._emit_error(self._error_message(data))
 
     @staticmethod
     def _error_message(data: dict) -> str:
         error = data.get("error") or {}
-        code = error.get("code", "")
+        code = str(error.get("code", ""))
         if code in ("invalid_api_key", "authentication_error"):
             return t("provider.api_key_invalid")
+        if _is_quota_error(code):
+            return t("openai.quota_exhausted")
         # OpenAI's raw message may contain technical details: keep
         # a simple text for the operator
         return t("provider.translation_error")
@@ -375,9 +485,19 @@ class OpenAIRealtimeTranslationProvider(RealtimeTranslationProvider):
     def _translate_connect_error(exc: Exception) -> OpenAIProviderError:
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         text = str(exc)
+        # checked first: the close reason of an out-of-credit session reads
+        # "1013 ... insufficient_quota.credit_balance_exhausted"
+        if _is_quota_error(text):
+            return OpenAIProviderError(t("openai.quota_exhausted"))
         if status in (401, 403) or "401" in text or "403" in text:
             return OpenAIProviderError(t("provider.api_key_invalid"))
         return OpenAIProviderError(t("openai.unreachable"))
+
+
+def _is_quota_error(text: str) -> bool:
+    """True for OpenAI's out-of-credit/quota errors (codes or close reasons)."""
+    lowered = text.lower()
+    return "insufficient_quota" in lowered or "credit_balance" in lowered
 
 
 async def check_api_key(

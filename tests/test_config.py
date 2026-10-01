@@ -239,3 +239,31 @@ def test_keyring_store_error_message_contains_no_secret(monkeypatch):
         raise AssertionError("expected SecretStorageError")
     except SecretStorageError as exc:
         assert "sk-supersecret" not in str(exc)
+
+
+# ---------------------------------------------------------------- log helpers
+
+
+def test_describe_config_lists_every_setting():
+    from app.config.models import describe_config
+
+    config = AppConfig()
+    config.vmix.port = 8087
+    config.overlay.monitor = "HDbitT"
+    text = describe_config(config)
+    assert "vmix.port=8087" in text
+    assert "overlay.monitor='HDbitT'" in text
+    assert "subtitles.hold_seconds=5" in text
+
+
+def test_config_changes_lists_only_what_changed():
+    from app.config.models import config_changes
+
+    old, new = AppConfig(), AppConfig()
+    new.vmix.port = 8087
+    new.vmix.input = "Titolo"
+    assert config_changes(old, new) == [
+        "vmix.port: 8088 → 8087",
+        "vmix.input: '' → 'Titolo'",
+    ]
+    assert config_changes(old, AppConfig()) == []

@@ -367,6 +367,198 @@ def test_intentional_close_after_drop_has_no_connection_lost_error():
     assert provider._task is None
 
 
+# ---------------------------------------------------------------- reconnection
+
+
+class _ScriptedConnector:
+    """Connector returning queued outcomes in order (an exception is raised,
+    anything else is returned as the socket); the last outcome repeats."""
+
+    def __init__(self, outcomes) -> None:
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    async def __call__(self, url, headers):
+        self.calls += 1
+        outcome = self.outcomes.pop(0) if len(self.outcomes) > 1 else self.outcomes[0]
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
+def _fast_backoff(monkeypatch):
+    import app.providers.openai_realtime as mod
+
+    monkeypatch.setattr(mod, "RECONNECT_INITIAL_DELAY_S", 0.001)
+    monkeypatch.setattr(mod, "MAX_BACKOFF_S", 0.004)
+
+
+def _scripted_provider(outcomes):
+    store = InMemorySecretStore()
+    store.set_api_key("openai", "sk-test-000000000000")
+    connector = _ScriptedConnector(outcomes)
+    provider = OpenAIRealtimeTranslationProvider(
+        store, connector=connector, close_timeout_s=0.05
+    )
+    reconnected = []
+    provider.on_reconnected(lambda: reconnected.append(True))
+    return provider, connector, reconnected
+
+
+async def _until(predicate, steps=400):
+    for _ in range(steps):
+        if predicate():
+            return True
+        await asyncio.sleep(0.005)
+    return False
+
+
+def test_reconnect_keeps_retrying_until_the_network_is_back(monkeypatch):
+    # regression (live show 18/09): after ONE failed reconnection attempt the
+    # provider stopped retrying and the translation stayed dead for 19 minutes
+    # while the operator read "Connessione persa, riprovo…"
+    _fast_backoff(monkeypatch)
+    first, second = FakeWebsocket(), FakeWebsocket()
+    network_down = ConnectionError("network down")
+
+    async def run():
+        provider, connector, reconnected = _scripted_provider(
+            [first, network_down, network_down, network_down, second]
+        )
+        _partials, _finals, errors = _sink(provider)
+        await provider.connect(ProviderConfig())
+        await first.close()  # the connection drops
+        assert await _until(lambda: provider._ws is second)
+        await provider.close()
+        return connector, reconnected, errors
+
+    connector, reconnected, errors = asyncio.run(run())
+    assert connector.calls == 5  # initial + 3 failed attempts + the good one
+    assert reconnected == [True]  # the operator is told translation resumed
+    # "connection lost", then the reason once (not once per attempt)
+    assert errors == [
+        "Connessione persa, riprovo…",
+        "Impossibile raggiungere OpenAI. Controlla la connessione Internet.",
+    ]
+
+
+def test_expired_session_is_reopened_silently(monkeypatch):
+    # OpenAI ends every session after its maximum duration: a new one must be
+    # opened at once, without error messages every hour
+    _fast_backoff(monkeypatch)
+    expired = json.dumps({"type": "error", "error": {"code": "session_expired"}})
+    first, second = FakeWebsocket([expired]), FakeWebsocket()
+
+    async def run():
+        provider, connector, reconnected = _scripted_provider([first, second])
+        _partials, _finals, errors = _sink(provider)
+        await provider.connect(ProviderConfig())
+        # no need to wait for the server to drop the expired socket
+        assert await _until(lambda: provider._ws is second)
+        await provider.close()
+        return connector, reconnected, errors
+
+    connector, reconnected, errors = asyncio.run(run())
+    assert connector.calls == 2
+    assert first.closed is True  # the expired socket is closed, not leaked
+    assert errors == []
+    assert reconnected == []
+
+
+def test_expired_session_that_cannot_reopen_tells_the_operator(monkeypatch):
+    _fast_backoff(monkeypatch)
+    expired = json.dumps({"type": "error", "error": {"code": "session_expired"}})
+    first, second = FakeWebsocket([expired]), FakeWebsocket()
+
+    async def run():
+        provider, _connector, reconnected = _scripted_provider(
+            [first, ConnectionError("down"), second]
+        )
+        _partials, _finals, errors = _sink(provider)
+        await provider.connect(ProviderConfig())
+        assert await _until(lambda: provider._ws is second)
+        await provider.close()
+        return reconnected, errors
+
+    reconnected, errors = asyncio.run(run())
+    assert errors == ["Impossibile raggiungere OpenAI. Controlla la connessione Internet."]
+    assert reconnected == [True]
+
+
+def test_stop_while_reconnecting_ends_cleanly(monkeypatch):
+    _fast_backoff(monkeypatch)
+    first = FakeWebsocket()
+
+    async def run():
+        provider, connector, reconnected = _scripted_provider(
+            [first, ConnectionError("down")]
+        )
+        await provider.connect(ProviderConfig())
+        await first.close()
+        assert await _until(lambda: connector.calls >= 3)  # retrying
+        await provider.close()
+        calls_at_close = connector.calls
+        await asyncio.sleep(0.05)
+        return provider, connector, calls_at_close, reconnected
+
+    provider, connector, calls_at_close, reconnected = asyncio.run(run())
+    assert provider._task is None
+    assert connector.calls == calls_at_close  # no attempt after STOP
+    assert reconnected == []
+
+
+def test_reconnect_backoff_grows_up_to_the_cap(monkeypatch):
+    import app.providers.openai_realtime as mod
+
+    _fast_backoff(monkeypatch)
+    good = FakeWebsocket()
+
+    async def run():
+        provider, _connector, _reconnected = _scripted_provider(
+            [ConnectionError("down"), ConnectionError("down"), good]
+        )
+        provider._config = ProviderConfig()
+        return await provider._reconnect(
+            "sk-test-000000000000", immediate=False, backoff=mod.RECONNECT_INITIAL_DELAY_S
+        )
+
+    ws, failures, backoff = asyncio.run(run())
+    assert ws is good
+    assert failures == 2
+    assert backoff == mod.MAX_BACKOFF_S  # 0.001 -> 0.002 -> 0.004 (cap)
+
+
+def test_out_of_credit_error_is_readable():
+    provider, _ws = _provider()
+    _partials, _finals, errors = _sink(provider)
+    _feed(provider, type="error", error={"code": "credit_balance_exhausted"})
+    assert len(errors) == 1
+    assert "Credito OpenAI esaurito" in errors[0]
+
+
+def test_session_refused_right_after_connect_is_readable():
+    # 18/09: with no credit left the server accepted the socket and closed it at
+    # once; START only said "Impossibile avviare la traduzione. Consulta i log."
+    class RefusingWebsocket(FakeWebsocket):
+        async def send(self, data: str) -> None:
+            raise ConnectionError(
+                "received 1013 (try again later) "
+                "insufficient_quota.credit_balance_exhausted"
+            )
+
+    refusing = RefusingWebsocket()
+
+    async def run():
+        provider, _connector, _reconnected = _scripted_provider([refusing])
+        with pytest.raises(OpenAIProviderError) as excinfo:
+            await provider.connect(ProviderConfig())
+        return str(excinfo.value)
+
+    message = asyncio.run(run())
+    assert "Credito OpenAI esaurito" in message
+    assert refusing.closed is True  # the refused socket is not leaked
+
+
 # ---------------------------------------------------------------- check_api_key
 
 

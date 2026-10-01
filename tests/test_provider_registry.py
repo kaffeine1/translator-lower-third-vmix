@@ -188,8 +188,34 @@ def test_test_api_local_with_packages_is_ok(monkeypatch):
 
 
 def test_settings_dialog_provider_list_includes_demo():
-    from app.gui.settings_dialog import PROVIDERS
+    from app.gui.settings_dialog import provider_choices
 
-    ids = [pid for _label, pid in PROVIDERS]
+    ids = [pid for _label, pid in provider_choices()]
     assert "openai" in ids
     assert "fake" in ids
+
+
+def test_only_openai_detects_the_source_language():
+    from app.providers.registry import get_provider_info
+
+    detecting = [
+        i.id for i in available_providers(include_hidden=True) if i.detects_source_language
+    ]
+    assert detecting == ["openai"]
+    assert get_provider_info("google-google").detects_source_language is False
+
+
+def test_local_providers_hidden_unless_enabled(monkeypatch):
+    import app.providers.registry as registry
+
+    assert "local" not in [i.id for i in available_providers()]
+    monkeypatch.setattr(registry, "LOCAL_PROVIDERS_VISIBLE", True)
+    assert "local" in [i.id for i in available_providers()]
+
+
+def test_provider_choices_keep_a_hidden_configured_provider():
+    from app.gui.settings_dialog import provider_choices
+
+    assert "local" not in [pid for _label, pid in provider_choices("openai")]
+    assert "local" in [pid for _label, pid in provider_choices("local")]
+

@@ -5,6 +5,82 @@ Tutte le modifiche rilevanti a Traduttore Live sono elencate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il
 progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
+## [0.3.3] — 2026-09-22
+
+Correzioni nate dall'analisi dei log di una diretta reale (18/09).
+
+### Corretto
+
+- **La rotella del mouse non cambia più i valori nelle Impostazioni.** Scorrendo
+  la finestra Impostazioni con la rotella, quando sotto il puntatore passava un
+  campo numerico o un menu a tendina (es. la **porta vMix**), la rotella ne
+  cambiava il valore invece di scorrere la pagina, e al salvataggio la modifica
+  involontaria veniva registrata. È la causa più probabile del collegamento vMix
+  perso in due dirette: la porta è passata da `8088` a `8089` (10/09) e a `8087`
+  (18/09), cioè di uno scatto. Ora, nelle Impostazioni e nella procedura
+  guidata, la rotella scorre sempre la pagina; i valori si cambiano solo con un
+  clic, digitando o con le frecce.
+- **Una modifica a vMix non passa più inosservata.** Se al salvataggio cambiano
+  host, porta, titolo o campo vMix, la barra di stato mostra per 20 secondi
+  esattamente cosa è cambiato (es. «vMix cambiato: Porta 8088 → 8087 — premi
+  Test vMix per verificare») e il semaforo vMix torna giallo.
+- **La riconnessione a OpenAI non si arrende più.** Se la connessione cadeva e il
+  primo tentativo di riconnessione falliva (rete ancora giù), l'app smetteva di
+  riprovare: la traduzione restava ferma finché l'operatore non premeva STOP e
+  START, mentre la barra di stato diceva ancora «Connessione persa, riprovo…».
+  Ora riprova **finché la connessione non torna** (a intervalli crescenti, fino
+  a uno ogni 30 secondi), spiega il motivo se non riesce (niente Internet, chiave
+  non valida, credito esaurito) e avvisa con «Connessione ripristinata» quando
+  la traduzione riprende.
+- **START e STOP non bloccano più la finestra.** Con una rete lenta lo START
+  poteva congelare la finestra fino a 10 secondi, e lo STOP fino a 10 secondi con
+  vMix irraggiungibile: Windows la segnava «Non risponde» e i clic fatti nel
+  frattempo partivano tutti insieme dopo. Ora START e STOP lavorano in
+  background; la barra di stato mostra «Avvio/Arresto della traduzione in
+  corso…» e i pulsanti restano disattivati finché l'operazione non finisce.
+  Lo STOP non prova più a svuotare il titolo di un vMix che non risponde.
+- **Semafori veritieri durante la traduzione.** Una caduta della connessione con
+  il servizio di traduzione accendeva il semaforo **vMix** in rosso: ora accende
+  quello **API**. I semafori tornano **verdi da soli** quando il servizio o vMix
+  riprendono a funzionare, e il semaforo vMix diventa verde al primo sottotitolo
+  ricevuto da vMix.
+- **Fine sessione OpenAI senza falsi allarmi.** OpenAI chiude ogni sessione dopo
+  la durata massima (circa ogni ora): prima comparivano «Errore dal provider di
+  traduzione» e «Connessione persa, riprovo…»; ora la nuova sessione viene aperta
+  subito e in silenzio.
+- **Test Audio disattivato durante la traduzione:** avrebbe sottratto l'ingresso
+  audio alla traduzione in corso.
+
+### Migliorato
+
+- **Messaggi più chiari:** «Il servizio di traduzione non risponde. Controlla la
+  connessione Internet e riprova.» invece di «Impossibile avviare la traduzione.
+  Consulta i log.» quando lo START scade; «Credito OpenAI esaurito» quando
+  l'account non ha più credito (anche allo START).
+- **Log più utili per ricostruire una diretta:** configurazione completa
+  all'avvio; **cosa cambia** a ogni salvataggio delle Impostazioni (es.
+  `vmix.port: 8088 → 8087`); accensione/spegnimento dei **sottotitoli a
+  schermo**; monitor collegati/scollegati; **primo sottotitolo arrivato a vMix**
+  in ogni sessione e ritorno di vMix dopo un guasto; tentativi di riconnessione.
+  Un vMix irraggiungibile non riempie più i log (un riepilogo al minuto invece di
+  due righe per ogni sottotitolo).
+- **`crash.log` con segni di avvio e chiusura regolare** per ogni sessione: si
+  distingue un errore interno da una chiusura forzata dall'esterno.
+
+### Modificato
+
+- **Lingua sorgente automatica con OpenAI.** Il servizio OpenAI riconosce da solo
+  la lingua parlata (anche se i relatori ne usano più d'una): il campo «Lingua
+  sorgente» chiedeva una scelta che OpenAI ignorava. Ora, con OpenAI, mostra
+  «Rilevata automaticamente dal servizio» e non si può cambiare; con gli altri
+  provider la scelta resta e viene conservata.
+- **Provider locali nascosti.** Il provider «Locale (Faster-Whisper →
+  MarianMT)» e il gruppo «Provider locali (offline)» non compaiono più
+  nell'interfaccia, perché gli operatori usano OpenAI. Il codice resta intatto e
+  si riattiva con un interruttore; una configurazione che già usa il provider
+  Locale continua a funzionare. Con OpenAI l'app non carica più all'avvio i
+  componenti locali eventualmente scaricati.
+
 ## [0.3.2] — 2026-07-08
 
 ### Migliorato

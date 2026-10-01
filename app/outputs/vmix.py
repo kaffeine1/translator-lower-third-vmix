@@ -15,6 +15,7 @@ Calls are blocking: GUI callers must run them off the Qt thread
 from __future__ import annotations
 
 import logging
+import time
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -25,6 +26,10 @@ logger = logging.getLogger("app.outputs.vmix")
 
 DEFAULT_TIMEOUT_S = 2.0
 ATTEMPTS = 2  # 1 attempt + 1 light retry on transport errors
+# While vMix keeps failing, one summary line per interval instead of one line
+# per attempt: a vMix down for hours must not flood the logs and rotate away
+# the history needed to understand what happened.
+FAILURE_SUMMARY_INTERVAL_S = 60.0
 
 TEST_PHRASE = "Test sottopancia"
 
@@ -49,6 +54,8 @@ class VmixOutput:
         self.selected_name = selected_name
         self._base_url = f"http://{host}:{port}/api/"
         self._client = client or httpx.Client(timeout=timeout_s)
+        self._failed_requests = 0  # consecutive requests that failed
+        self._last_summary_at = 0.0
 
     # ------------------------------------------------------------------ API
 
@@ -90,12 +97,15 @@ class VmixOutput:
 
     def _get(self, params: dict) -> httpx.Response:
         last_exc: Exception | None = None
+        # full detail only at the start of a failure streak (then DEBUG plus a
+        # periodic summary, see _note_failure)
+        log = logger.warning if self._failed_requests == 0 else logger.debug
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 response = self._client.get(self._base_url, params=params)
             except httpx.TransportError as exc:
                 last_exc = exc
-                logger.warning(
+                log(
                     "vMix %s:%s non raggiungibile (tentativo %s/%s): %s",
                     self.host,
                     self.port,
@@ -107,17 +117,44 @@ class VmixOutput:
             if response.status_code != 200:
                 # vMix explains the error in the body ("Invalid input name…"):
                 # it goes to the logs or the Open Log button adds nothing
-                logger.warning(
+                log(
                     "vMix ha risposto HTTP %s a %s: %s",
                     response.status_code,
                     params.get("Function", "stato"),
                     response.text[:200].strip(),
                 )
+                self._note_failure()
                 raise VmixError(self._http_error_message(response.status_code, params))
+            self._note_success()
             return response
+        self._note_failure()
         raise VmixError(
             t("vmix.unreachable", host=self.host, port=self.port)
         ) from last_exc
+
+    def _note_failure(self) -> None:
+        self._failed_requests += 1
+        now = time.monotonic()
+        if self._failed_requests == 1:
+            self._last_summary_at = now
+        elif now - self._last_summary_at >= FAILURE_SUMMARY_INTERVAL_S:
+            self._last_summary_at = now
+            logger.warning(
+                "vMix %s:%s ancora in errore: %d invii falliti di fila",
+                self.host,
+                self.port,
+                self._failed_requests,
+            )
+
+    def _note_success(self) -> None:
+        if self._failed_requests:
+            logger.info(
+                "vMix %s:%s di nuovo raggiungibile dopo %d invii falliti",
+                self.host,
+                self.port,
+                self._failed_requests,
+            )
+        self._failed_requests = 0
 
     @staticmethod
     def _http_error_message(status_code: int, params: dict) -> str:

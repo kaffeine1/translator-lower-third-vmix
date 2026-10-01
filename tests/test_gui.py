@@ -31,6 +31,15 @@ def qapp():
     yield app
 
 
+@pytest.fixture
+def local_visible(monkeypatch):
+    """The local (offline) providers are hidden from the GUI by default: the
+    tests of their controls run with them shown, as when re-enabled."""
+    import app.providers.registry as registry
+
+    monkeypatch.setattr(registry, "LOCAL_PROVIDERS_VISIBLE", True)
+
+
 def _make_window(tmp_path, services=None, store=None):
     manager = ConfigManager(config_dir=tmp_path)
     config = manager.load()
@@ -87,22 +96,102 @@ def test_main_window_has_required_controls(qapp, tmp_path):
 
 
 def test_start_stop_toggle_buttons(qapp, tmp_path):
+    # START/STOP run on a worker thread: the outcome arrives asynchronously
     window = _make_window(tmp_path)
     assert window.btn_start.isEnabled()
     assert not window.btn_stop.isEnabled()
     window.btn_start.click()
+    assert _process_until(qapp, lambda: window.btn_stop.isEnabled())
     assert not window.btn_start.isEnabled()
-    assert window.btn_stop.isEnabled()
     window.btn_stop.click()
-    assert window.btn_start.isEnabled()
+    assert _process_until(qapp, lambda: window.btn_start.isEnabled())
     assert not window.btn_stop.isEnabled()
 
 
 def test_start_updates_subtitle_preview(qapp, tmp_path):
     window = _make_window(tmp_path)
     window.btn_start.click()
+    assert _process_until(qapp, lambda: "demo" in window.preview.text())
+
+
+def test_start_and_stop_do_not_freeze_the_window(qapp, tmp_path):
+    # regression (live show 18/09): a slow provider connection or an unreachable
+    # vMix froze the window for up to 10 s on START/STOP ("Not responding")
+    import threading
+
+    release = threading.Event()
+
+    class SlowServices(MockAppServices):
+        def start_translation(self):
+            release.wait(timeout=3)
+            return super().start_translation()
+
+        def stop_translation(self):
+            release.wait(timeout=3)
+            return super().stop_translation()
+
+    services = SlowServices()
+    window = _make_window(tmp_path, services=services)
+    window.btn_start.click()  # returns at once: the call runs on a worker
     qapp.processEvents()
-    assert "demo" in window.preview.text()
+    # while the START is in flight nothing can start it twice or interfere
+    assert not window.btn_start.isEnabled()
+    assert not window.btn_stop.isEnabled()
+    assert not window.btn_settings.isEnabled()
+    assert not window.btn_test_audio.isEnabled()
+    assert "avvio" in window.statusBar().currentMessage().lower()
+    release.set()
+    assert _process_until(qapp, lambda: window.btn_stop.isEnabled())
+    assert window.btn_settings.isEnabled()
+    # the audio test would steal the capture device of the running translation
+    assert not window.btn_test_audio.isEnabled()
+
+    release.clear()
+    window.btn_stop.click()
+    qapp.processEvents()
+    assert not window.btn_start.isEnabled()
+    assert not window.btn_stop.isEnabled()
+    assert "arresto" in window.statusBar().currentMessage().lower()
+    release.set()
+    assert _process_until(qapp, lambda: window.btn_start.isEnabled())
+    assert window.btn_test_audio.isEnabled()
+    assert services.running is False
+
+
+def test_failed_start_leaves_start_available(qapp, tmp_path):
+    from app.services import ServiceResult
+
+    class FailingServices(MockAppServices):
+        def start_translation(self):
+            return ServiceResult(False, "Il servizio di traduzione non risponde.")
+
+    window = _make_window(tmp_path, services=FailingServices())
+    window.btn_start.click()
+    assert _process_until(
+        qapp, lambda: "non risponde" in window.statusBar().currentMessage()
+    )
+    assert window.btn_start.isEnabled()
+    assert not window.btn_stop.isEnabled()
+
+
+def test_close_waits_for_inflight_start_and_stops_translation(qapp, tmp_path):
+    # a START still connecting when the window closes must not leave a
+    # translation running with nobody to stop it
+    import threading
+
+    release = threading.Event()
+
+    class SlowServices(MockAppServices):
+        def start_translation(self):
+            release.wait(timeout=3)
+            return super().start_translation()
+
+    services = SlowServices()
+    window = _make_window(tmp_path, services=services)
+    window.btn_start.click()
+    threading.Timer(0.2, release.set).start()
+    window.close()
+    assert services.running is False
 
 
 def test_diagnostics_text_has_version_and_paths_no_secret(qapp, tmp_path):
@@ -123,14 +212,46 @@ def test_diagnostics_text_has_version_and_paths_no_secret(qapp, tmp_path):
 
 
 def test_translation_error_shown_without_modal(qapp, tmp_path):
-    # live errors end up in the status bar and in the vMix status light,
-    # without modal dialogs that would interrupt the event
+    # live errors end up in the status bar and in the status light of the
+    # failing link, without modal dialogs that would interrupt the event
+    from app.services import STATUS_VMIX
+
     window = _make_window(tmp_path)
     window.audio_light.set_state(StatusState.GREEN)
     window._services._emit_error("vMix non raggiungibile")
+    window._services._emit_status(STATUS_VMIX, False)
     qapp.processEvents()
     assert window.vmix_light.state == StatusState.RED
+    assert window.audio_light.state == StatusState.GREEN
     assert "vmix non raggiungibile" in window.statusBar().currentMessage().lower()
+
+
+def test_provider_error_turns_api_light_red_not_vmix(qapp, tmp_path):
+    # regression: a dropped OpenAI connection used to turn the vMix light red
+    from app.services import STATUS_API
+
+    window = _make_window(tmp_path)
+    window.vmix_light.set_state(StatusState.GREEN)
+    window._services._emit_error("Connessione persa, riprovo…")
+    window._services._emit_status(STATUS_API, False)
+    qapp.processEvents()
+    assert window.api_light.state == StatusState.RED
+    assert window.vmix_light.state == StatusState.GREEN
+
+
+def test_link_recovery_turns_light_green_with_message(qapp, tmp_path):
+    from app.services import STATUS_API, STATUS_VMIX
+
+    window = _make_window(tmp_path)
+    window._services._emit_status(STATUS_API, False)
+    window._services._emit_status(STATUS_VMIX, False)
+    qapp.processEvents()
+    window._services._emit_status(STATUS_API, True, "Connessione ripristinata")
+    window._services._emit_status(STATUS_VMIX, True)
+    qapp.processEvents()
+    assert window.api_light.state == StatusState.GREEN
+    assert window.vmix_light.state == StatusState.GREEN
+    assert "ripristinata" in window.statusBar().currentMessage().lower()
 
 
 def test_test_buttons_update_lights(qapp, tmp_path):
@@ -264,7 +385,7 @@ def test_start_while_audio_testing_stops_monitor(qapp, tmp_path):
     assert services.monitoring is True
     window.btn_start.click()
     assert services.monitoring is False
-    assert services.running is True
+    assert _process_until(qapp, lambda: services.running is True)
 
 
 def test_audio_test_auto_stops_via_timer(qapp, tmp_path):
@@ -326,7 +447,9 @@ def test_settings_dialog_loads_config(qapp):
     assert dialog.field_edit.text() == "Titolo.Text"
     assert dialog.chars_spin.value() == 36
     assert dialog.lines_spin.value() == 1
-    assert dialog.source_combo.currentData() == "es"
+    # OpenAI detects the spoken language: shown as automatic, saved unchanged
+    assert dialog.source_combo.currentData() == "auto"
+    assert dialog.result_config().source_language == "es"
     assert dialog.target_combo.currentData() == "it"
     assert dialog.device_combo.currentData() == 1
 
@@ -412,7 +535,7 @@ def test_settings_dialog_dynamic_credentials_per_provider(qapp):
     assert dialog.entered_credentials() == {"azure": "az-key"}
 
 
-def test_settings_dialog_local_model_and_device(qapp):
+def test_settings_dialog_local_model_and_device(qapp, local_visible):
     config = AppConfig()
     config.local_model = "medium"
     config.local_device = "cuda"
@@ -827,7 +950,7 @@ def test_overlay_set_text_does_not_move_or_resize(qapp):
     overlay.close()
 
 
-def test_settings_dialog_has_local_runtime_controls(qapp):
+def test_settings_dialog_has_local_runtime_controls(qapp, local_visible):
     # download & setup of local components from the GUI (installer stays light)
     import app.local_runtime as lr
 
@@ -845,7 +968,7 @@ def test_settings_dialog_has_local_runtime_controls(qapp):
     assert not dialog.runtime_progress.isVisibleTo(dialog)  # hidden until used
 
 
-def test_settings_dialog_worker_done_restores_buttons(qapp):
+def test_settings_dialog_worker_done_restores_buttons(qapp, local_visible):
     dialog = SettingsDialog(AppConfig(), [])
     dialog.runtime_progress.setVisible(True)
     dialog.btn_download_models.setEnabled(False)
@@ -854,7 +977,7 @@ def test_settings_dialog_worker_done_restores_buttons(qapp):
     assert dialog.runtime_status_label.text() == "fatto"
 
 
-def test_wizard_local_provider_shows_runtime_controls(qapp):
+def test_wizard_local_provider_shows_runtime_controls(qapp, local_visible):
     # choosing the local provider in the wizard must offer the component/model
     # download right on the credentials page (no credentials to enter)
     config = AppConfig()
@@ -868,7 +991,7 @@ def test_wizard_local_provider_shows_runtime_controls(qapp):
     assert not page.runtime_progress.isVisibleTo(page)
 
 
-def test_wizard_cloud_provider_hides_runtime_controls(qapp):
+def test_wizard_cloud_provider_hides_runtime_controls(qapp, local_visible):
     config = AppConfig()
     config.provider = "openai"
     wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
@@ -880,7 +1003,7 @@ def test_wizard_cloud_provider_hides_runtime_controls(qapp):
     assert not page._local_hint.isVisibleTo(page)
 
 
-def test_wizard_result_config_carries_languages_and_model(qapp):
+def test_wizard_result_config_carries_languages_and_model(qapp, local_visible):
     # the wizard choices drive the config AND what the model download fetches
     config = AppConfig()
     config.provider = "local"
@@ -895,7 +1018,7 @@ def test_wizard_result_config_carries_languages_and_model(qapp):
     assert result.local_model == "medium"
 
 
-def test_wizard_local_provider_shows_model_choice(qapp):
+def test_wizard_local_provider_shows_model_choice(qapp, local_visible):
     config = AppConfig()
     config.provider = "local"
     wizard = FirstRunWizard(config, [], MockAppServices(), InMemorySecretStore())
@@ -910,7 +1033,7 @@ def test_wizard_local_provider_shows_model_choice(qapp):
     assert not page.local_model_combo.isVisibleTo(page)
 
 
-def test_settings_models_state_reflects_selection(qapp, monkeypatch):
+def test_settings_models_state_reflects_selection(qapp, local_visible, monkeypatch):
     # changing model/languages updates the hint: the next download fetches the
     # NEW selection (this was invisible before and read as "does not download")
     from app import local_runtime as lr
@@ -924,7 +1047,7 @@ def test_settings_models_state_reflects_selection(qapp, monkeypatch):
     assert "già scaricati" in dialog.runtime_status_label.text()
 
 
-def test_settings_remove_models_button_state_and_flow(qapp, monkeypatch, tmp_path):
+def test_settings_remove_models_button_state_and_flow(qapp, local_visible, monkeypatch, tmp_path):
     # after the event the models can be removed to free disk space; the button
     # is enabled only when there is something to remove
     from PySide6.QtWidgets import QMessageBox
@@ -953,7 +1076,7 @@ def test_settings_remove_models_button_state_and_flow(qapp, monkeypatch, tmp_pat
     assert "75 MB" in dialog.runtime_status_label.text()
 
 
-def test_download_disables_remove_button_too(qapp, monkeypatch, tmp_path):
+def test_download_disables_remove_button_too(qapp, local_visible, monkeypatch, tmp_path):
     # regression: removing models while a download is writing them killed the
     # download with an opaque OSError — one operation at a time
     import threading as _threading
@@ -1010,7 +1133,7 @@ def test_settings_content_fits_without_wide_horizontal_scroll(qapp):
         )
 
 
-def test_local_device_change_prompts_restart(qapp, tmp_path, monkeypatch):
+def test_local_device_change_prompts_restart(qapp, local_visible, tmp_path, monkeypatch):
     # switching CPU<->GPU only takes effect after a restart (the pack is chosen
     # at startup): the operator must be told, not left thinking it applied
     from PySide6.QtWidgets import QMessageBox
@@ -1032,3 +1155,248 @@ def test_local_device_change_prompts_restart(qapp, tmp_path, monkeypatch):
     window._config = new_config
     assert window._apply_settings(same, {}) is True
     assert "info" not in shown
+
+
+# ---------------------------------------------------------------- diagnostics log
+
+
+def _gui_messages(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "app.gui"]
+
+
+def test_overlay_toggle_is_logged(qapp, tmp_path, caplog):
+    # 18/09: whether the on-screen subtitles were on could only be guessed
+    import logging
+
+    window = _make_window(tmp_path)
+    with caplog.at_level(logging.INFO, logger="app.gui"):
+        window.btn_overlay.click()
+        window.btn_overlay.click()
+    messages = _gui_messages(caplog)
+    assert any("Sottotitoli a schermo attivati" in m for m in messages)
+    assert any("Sottotitoli a schermo disattivati" in m for m in messages)
+
+
+def test_settings_changes_are_logged(qapp, tmp_path, caplog):
+    # 18/09: the vMix port was changed to a wrong one, and the log only said
+    # "Configurazione salvata"
+    import logging
+
+    window = _make_window(tmp_path)
+    new_config = AppConfig()
+    new_config.vmix.port = 8087
+    with caplog.at_level(logging.INFO, logger="app.gui"):
+        assert window._apply_settings(new_config, {}) is True
+    assert any("vmix.port: 8088 → 8087" in m for m in _gui_messages(caplog))
+
+
+def test_screen_changes_are_logged(qapp, tmp_path, caplog):
+    import logging
+
+    from PySide6.QtGui import QGuiApplication
+
+    window = _make_window(tmp_path)
+    screen = QGuiApplication.primaryScreen()
+    with caplog.at_level(logging.INFO, logger="app.gui"):
+        window._on_screen_added(screen)
+        window._on_screen_removed(screen)
+        window._on_primary_screen_changed(screen)
+    messages = _gui_messages(caplog)
+    assert any(m.startswith("Schermo collegato:") for m in messages)
+    assert any(m.startswith("Schermo scollegato:") for m in messages)
+    assert any(m.startswith("Schermo principale cambiato:") for m in messages)
+
+
+def test_missing_overlay_monitor_is_logged(qapp, tmp_path, caplog):
+    import logging
+
+    window = _make_window(tmp_path)
+    window._config.overlay.monitor = "HDbitT"  # not connected here
+    window._config.overlay.enabled = True
+    with caplog.at_level(logging.WARNING, logger="app.gui"):
+        window._apply_overlay_state()
+    assert any("HDbitT" in m and "non collegato" in m for m in _gui_messages(caplog))
+    window._overlay.hide()
+
+
+# ---------------------------------------------------------------- mouse wheel
+
+
+def _wheel(widget, notches: int = 1):
+    """Deliver a mouse-wheel event over the middle of ``widget`` (positive =
+    away from the operator, i.e. scroll up / value up); returns the event."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    center = QPointF(widget.rect().center())
+    event = QWheelEvent(
+        center,
+        widget.mapToGlobal(center),
+        QPoint(0, 0),
+        QPoint(0, 120 * notches),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    QApplication.sendEvent(widget, event)
+    return event
+
+
+def test_wheel_changes_an_unguarded_spin_box(qapp):
+    # sanity check of the harness: without the guard Qt changes the value
+    from PySide6.QtWidgets import QSpinBox
+
+    spin = QSpinBox()
+    spin.setRange(1, 65535)
+    spin.setValue(8088)
+    event = _wheel(spin, -1)
+    assert spin.value() == 8087
+    assert event.isAccepted() is True  # the field consumed the wheel
+
+
+def test_settings_wheel_never_changes_fields(qapp):
+    # regression (live shows 10/09 and 18/09): scrolling the Settings with the
+    # mouse wheel changed the vMix port under the pointer (8088 -> 8089/8087)
+    from PySide6.QtCore import Qt
+
+    dialog = SettingsDialog(_custom_config(), [])
+    fields = {
+        "port": dialog.port_spin,
+        "chars": dialog.chars_spin,
+        "lines": dialog.lines_spin,
+        "interval": dialog.interval_spin,
+        "clear": dialog.clear_spin,
+        "provider": dialog.provider_combo,
+        "local_model": dialog.local_model_combo,
+        "local_device": dialog.local_device_combo,
+    }
+    before = {
+        name: (w.value() if hasattr(w, "value") else w.currentIndex())
+        for name, w in fields.items()
+    }
+    for widget in fields.values():
+        _wheel(widget, -1)
+        _wheel(widget, 3)
+    after = {
+        name: (w.value() if hasattr(w, "value") else w.currentIndex())
+        for name, w in fields.items()
+    }
+    assert after == before
+    assert dialog.result_config().vmix.port == 9000
+    # the wheel does not even grab the focus: only a click or Tab does
+    assert dialog.port_spin.focusPolicy() == Qt.FocusPolicy.StrongFocus
+
+
+def test_settings_wheel_over_a_field_is_left_to_the_page(qapp):
+    # the field refuses the wheel, so Qt hands the (real, OS-generated) event
+    # on to the parent widgets and the scroll area scrolls the page. Qt does
+    # not propagate a synthesized event, so the test checks the handoff: not
+    # accepted by the field, value untouched.
+    dialog = SettingsDialog(_custom_config(), [])
+    event = _wheel(dialog.port_spin, -2)
+    assert event.isAccepted() is False
+    assert dialog.port_spin.value() == 9000
+
+
+def test_wizard_wheel_never_changes_fields(qapp):
+    services = MockAppServices()
+    wizard = FirstRunWizard(AppConfig(), [], services)
+    port = wizard.port_spin.value()
+    provider = wizard.provider_combo.currentIndex()
+    _wheel(wizard.port_spin, -1)
+    _wheel(wizard.provider_combo, 1)
+    assert wizard.port_spin.value() == port
+    assert wizard.provider_combo.currentIndex() == provider
+
+
+def test_saving_changed_vmix_settings_is_spelled_out(qapp, tmp_path):
+    # an unnoticed vMix change must be impossible to miss after saving
+    window = _make_window(tmp_path)
+    new_config = AppConfig()
+    new_config.vmix.port = 8087
+    assert window._apply_settings(new_config, {}) is True
+    message = window.statusBar().currentMessage()
+    assert "Porta 8088 → 8087" in message
+    assert "Test vMix" in message
+    assert window.vmix_light.state == StatusState.YELLOW
+
+
+def test_saving_unchanged_vmix_settings_says_saved(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    new_config = AppConfig()
+    new_config.subtitles.max_lines = 1
+    assert window._apply_settings(new_config, {}) is True
+    assert window.statusBar().currentMessage() == "Impostazioni salvate"
+
+
+# ---------------------------------------------------------------- source language & local
+
+
+def test_settings_openai_source_language_is_automatic(qapp):
+    # OpenAI recognizes the spoken language by itself: asking for it misled
+    # the operators, the combo shows it as automatic and is locked
+    dialog = SettingsDialog(_custom_config(), [])
+    assert dialog.provider_combo.currentData() == "openai"
+    assert dialog.source_combo.currentData() == "auto"
+    assert "automaticamente" in dialog.source_combo.currentText()
+    assert not dialog.source_combo.isEnabled()
+    assert dialog.result_config().source_language == "es"  # kept, not "auto"
+
+
+def test_settings_other_providers_get_the_source_language_back(qapp):
+    from app.gui.settings_dialog import _select_by_data
+
+    dialog = SettingsDialog(_custom_config(), [])
+    _select_by_data(dialog.provider_combo, "google-google")
+    assert dialog.source_combo.isEnabled()
+    assert dialog.source_combo.findData("auto") < 0  # "auto" is never savable here
+    assert dialog.source_combo.currentData() == "es"
+    _select_by_data(dialog.source_combo, "en")
+    _select_by_data(dialog.provider_combo, "openai")
+    assert dialog.source_combo.currentData() == "auto"
+    assert dialog.result_config().source_language == "en"  # the last manual choice
+
+
+def test_settings_hide_local_providers_by_default(qapp):
+    dialog = SettingsDialog(_custom_config(), [])
+    ids = [dialog.provider_combo.itemData(i) for i in range(dialog.provider_combo.count())]
+    assert "local" not in ids
+    assert dialog.local_box.isHidden()
+    # hidden values are saved unchanged
+    config = dialog.result_config()
+    assert (config.local_model, config.local_device) == ("small", "cpu")
+
+
+def test_settings_show_local_group_when_local_is_configured(qapp):
+    # an existing local setup keeps its controls and its name in the selector
+    config = _custom_config()
+    config.provider = "local"
+    dialog = SettingsDialog(config, [])
+    assert dialog.provider_combo.currentData() == "local"
+    assert dialog.provider_combo.currentText().startswith("Locale")
+    assert not dialog.local_box.isHidden()
+
+
+def test_settings_show_local_group_when_enabled(qapp, local_visible):
+    dialog = SettingsDialog(_custom_config(), [])
+    ids = [dialog.provider_combo.itemData(i) for i in range(dialog.provider_combo.count())]
+    assert "local" in ids
+    assert not dialog.local_box.isHidden()
+
+
+def test_wizard_openai_source_language_is_automatic(qapp):
+    services = MockAppServices()
+    wizard = FirstRunWizard(AppConfig(), [], services)
+    ids = [wizard.provider_combo.itemData(i) for i in range(wizard.provider_combo.count())]
+    assert "local" not in ids
+    assert wizard.provider_combo.currentData() == "openai"
+    assert wizard.source_combo.currentData() == "auto"
+    assert not wizard.source_combo.isEnabled()
+    assert wizard.result_config().source_language == "es"
+
+
+def test_diagnostics_show_automatic_source_language_for_openai(qapp, tmp_path):
+    window = _make_window(tmp_path)
+    assert "Lingue: rilevata automaticamente → it" in window.diagnostics_text()
+
